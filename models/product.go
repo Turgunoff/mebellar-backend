@@ -70,20 +70,21 @@ func (j *JSONBArray) Scan(value interface{}) error {
 // ============================================
 
 // Product - mahsulot modeli (MVP uchun moslashuvchan arxitektura)
+// @Description Mahsulot ma'lumotlari
 type Product struct {
-	ID            string         `json:"id"`
-	CategoryID    *string        `json:"category_id,omitempty"`
-	Name          string         `json:"name"`
-	Description   string         `json:"description"`
-	Price         float64        `json:"price"`
-	DiscountPrice *float64       `json:"discount_price,omitempty"` // Chegirmali narx
-	Images        pq.StringArray `json:"images"`                   // Rasmlar massivi
-	Specs         JSONB          `json:"specs,omitempty"`          // Xususiyatlar (Material, O'lcham)
-	Variants      JSONBArray     `json:"variants,omitempty"`       // Variantlar (rang, o'lcham)
-	Rating        float64        `json:"rating"`
-	IsNew         bool           `json:"is_new"`
-	IsPopular     bool           `json:"is_popular"`
-	IsActive      bool           `json:"is_active"`
+	ID            string         `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CategoryID    *string        `json:"category_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Name          string         `json:"name" example:"Premium Divan"`
+	Description   string         `json:"description" example:"Zamonaviy dizayndagi divan"`
+	Price         float64        `json:"price" example:"5500000"`
+	DiscountPrice *float64       `json:"discount_price,omitempty" example:"4400000"`
+	Images        pq.StringArray `json:"images" swaggertype:"array,string" example:"https://example.com/img1.jpg,https://example.com/img2.jpg"`
+	Specs         JSONB          `json:"specs,omitempty" swaggertype:"object"`
+	Variants      JSONBArray     `json:"variants,omitempty" swaggertype:"array,object"`
+	Rating        float64        `json:"rating" example:"4.8"`
+	IsNew         bool           `json:"is_new" example:"true"`
+	IsPopular     bool           `json:"is_popular" example:"true"`
+	IsActive      bool           `json:"is_active" example:"true"`
 	CreatedAt     time.Time      `json:"created_at"`
 }
 
