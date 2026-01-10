@@ -18,6 +18,28 @@ const (
 	dbname   = "mebellar_olami"
 )
 
+// CORS middleware - barcha so'rovlarga CORS headerlarini qo'shadi
+func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// CORS headers
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
+		w.Header().Set("Access-Control-Max-Age", "86400")
+
+		// OPTIONS so'rovlarini darhol qaytarish (preflight)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
+		// Log incoming request
+		log.Printf("📥 %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
+
+		next(w, r)
+	}
+}
+
 func main() {
 	// 1. Bazaga ulanish
 	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
@@ -38,17 +60,17 @@ func main() {
 	// Users jadvalini yaratish (agar mavjud bo'lmasa)
 	createUsersTable(db)
 
-	// 2. Marshrutlar (Routes)
+	// 2. Marshrutlar (Routes) - CORS middleware bilan
 	// Mahsulotlar
-	http.HandleFunc("/api/products", handlers.GetProducts(db))
+	http.HandleFunc("/api/products", corsMiddleware(handlers.GetProducts(db)))
 
 	// Autentifikatsiya endpointlari
-	http.HandleFunc("/api/auth/send-otp", handlers.SendOTP(db))
-	http.HandleFunc("/api/auth/verify-otp", handlers.VerifyOTP(db))
-	http.HandleFunc("/api/auth/register", handlers.Register(db))
-	http.HandleFunc("/api/auth/login", handlers.Login(db))
-	http.HandleFunc("/api/auth/forgot-password", handlers.ForgotPassword(db))
-	http.HandleFunc("/api/auth/reset-password", handlers.ResetPassword(db))
+	http.HandleFunc("/api/auth/send-otp", corsMiddleware(handlers.SendOTP(db)))
+	http.HandleFunc("/api/auth/verify-otp", corsMiddleware(handlers.VerifyOTP(db)))
+	http.HandleFunc("/api/auth/register", corsMiddleware(handlers.Register(db)))
+	http.HandleFunc("/api/auth/login", corsMiddleware(handlers.Login(db)))
+	http.HandleFunc("/api/auth/forgot-password", corsMiddleware(handlers.ForgotPassword(db)))
+	http.HandleFunc("/api/auth/reset-password", corsMiddleware(handlers.ResetPassword(db)))
 
 	// 3. Serverni yoqish
 	fmt.Println("🚀 Server 8081-portda ishlayapti...")
@@ -59,6 +81,8 @@ func main() {
 	fmt.Println("   POST /api/auth/login")
 	fmt.Println("   POST /api/auth/forgot-password")
 	fmt.Println("   POST /api/auth/reset-password")
+	fmt.Println("")
+	fmt.Println("🔧 CORS enabled for all origins")
 	log.Fatal(http.ListenAndServe(":8081", nil))
 }
 
