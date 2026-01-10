@@ -4,7 +4,7 @@ import "time"
 
 // User - foydalanuvchi modeli (users jadvali bilan bir xil)
 type User struct {
-	ID           int       `json:"id"`
+	ID           string    `json:"id"` // UUID sifatida string
 	FullName     string    `json:"full_name"`
 	Phone        string    `json:"phone"`
 	PasswordHash string    `json:"-"` // JSON'da ko'rsatilmasin

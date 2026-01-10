@@ -51,7 +51,7 @@ func checkPassword(password, hash string) bool {
 }
 
 // generateJWT - JWT token yaratadi
-func generateJWT(userID int, phone string) (string, error) {
+func generateJWT(userID string, phone string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"phone":   phone,
@@ -250,7 +250,7 @@ func Register(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Telefon raqami mavjudligini tekshirish
-		var existingID int
+		var existingID string
 		err := db.QueryRow("SELECT id FROM users WHERE phone = $1", req.Phone).Scan(&existingID)
 		if err == nil {
 			writeJSON(w, http.StatusConflict, models.AuthResponse{
@@ -272,7 +272,7 @@ func Register(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Foydalanuvchini bazaga qo'shish
-		var userID int
+		var userID string
 		err = db.QueryRow(`
 			INSERT INTO users (full_name, phone, password_hash, created_at, updated_at)
 			VALUES ($1, $2, $3, NOW(), NOW())
@@ -441,7 +441,7 @@ func ForgotPassword(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Foydalanuvchi mavjudligini tekshirish
-		var existingID int
+		var existingID string
 		err := db.QueryRow("SELECT id FROM users WHERE phone = $1", req.Phone).Scan(&existingID)
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
