@@ -27,7 +27,7 @@ jobs:
             git pull origin main
 
             # 3. Dasturni yangilab qurish (Build)
-            /usr/bin/go build -o server_app main.go
+            /usr/local/go/bin/go build -o server_app main.go
 
             # 4. Servisni qayta ishga tushirish
             systemctl restart mebellar
