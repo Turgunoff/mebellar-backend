@@ -48,10 +48,10 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 	// Barcha kategoriyalarni olish
 	query := `
 		SELECT 
-			c.id, c.parent_id, c.name, COALESCE(c.icon_url, ''), c.created_at,
+			c.id, c.parent_id, c.name, COALESCE(c.icon_url, ''),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
-		ORDER BY c.created_at ASC
+		ORDER BY c.name ASC
 	`
 
 	rows, err := db.Query(query)
@@ -71,7 +71,7 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 
 	for rows.Next() {
 		var c models.Category
-		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.CreatedAt, &c.ProductCount)
+		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
 		if err != nil {
 			log.Printf("Category scan xatosi: %v", err)
 			continue
@@ -113,7 +113,7 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	query := `
 		SELECT 
-			c.id, c.parent_id, c.name, COALESCE(c.icon_url, ''), c.created_at,
+			c.id, c.parent_id, c.name, COALESCE(c.icon_url, ''),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
 		ORDER BY c.parent_id NULLS FIRST, c.name ASC
@@ -133,7 +133,7 @@ func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	categories := []models.Category{}
 	for rows.Next() {
 		var c models.Category
-		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.CreatedAt, &c.ProductCount)
+		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
 		if err != nil {
 			log.Printf("Category scan xatosi: %v", err)
 			continue
@@ -193,14 +193,14 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 
 		// Kategoriyani olish (sub-kategoriyalar bilan)
 		query := `
-			SELECT id, parent_id, name, COALESCE(icon_url, ''), created_at,
+			SELECT id, parent_id, name, COALESCE(icon_url, ''),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE id = $1
 		`
 
 		var c models.Category
-		err := db.QueryRow(query, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.CreatedAt, &c.ProductCount)
+		err := db.QueryRow(query, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -221,7 +221,7 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 
 		// Sub-kategoriyalarni olish
 		subQuery := `
-			SELECT id, parent_id, name, COALESCE(icon_url, ''), created_at,
+			SELECT id, parent_id, name, COALESCE(icon_url, ''),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = sc.id AND p.is_active = true) as product_count
 			FROM categories sc
 			WHERE parent_id = $1
@@ -234,7 +234,7 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 			c.SubCategories = []models.Category{}
 			for rows.Next() {
 				var sub models.Category
-				if err := rows.Scan(&sub.ID, &sub.ParentID, &sub.Name, &sub.IconURL, &sub.CreatedAt, &sub.ProductCount); err == nil {
+				if err := rows.Scan(&sub.ID, &sub.ParentID, &sub.Name, &sub.IconURL, &sub.ProductCount); err == nil {
 					c.SubCategories = append(c.SubCategories, sub)
 				}
 			}

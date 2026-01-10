@@ -1,9 +1,5 @@
 package models
 
-import (
-	"time"
-)
-
 // Category - kategoriya modeli
 // @Description Mahsulot kategoriyasi
 type Category struct {
@@ -13,7 +9,6 @@ type Category struct {
 	IconURL       string     `json:"icon_url" example:"https://img.icons8.com/fluency/96/living-room.png"`
 	ProductCount  int        `json:"product_count,omitempty" example:"25"`
 	SubCategories []Category `json:"sub_categories,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
 }
 
 // CategoryResponse - bitta kategoriya javobi
@@ -33,10 +28,9 @@ type CategoriesResponse struct {
 
 // FlatCategory - tekis kategoriya (parent bilan)
 type FlatCategory struct {
-	ID         string    `json:"id"`
-	ParentID   *string   `json:"parent_id,omitempty"`
-	ParentName *string   `json:"parent_name,omitempty"`
-	Name       string    `json:"name"`
-	IconURL    string    `json:"icon_url"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string  `json:"id"`
+	ParentID   *string `json:"parent_id,omitempty"`
+	ParentName *string `json:"parent_name,omitempty"`
+	Name       string  `json:"name"`
+	IconURL    string  `json:"icon_url"`
 }
