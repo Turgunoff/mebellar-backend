@@ -156,7 +156,7 @@ func GetProfile(db *sql.DB) http.HandlerFunc {
 		// Bazadan foydalanuvchini olish
 		var user models.User
 		err := db.QueryRow(`
-			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), created_at, updated_at
 			FROM users WHERE id = $1
 		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 
@@ -319,7 +319,7 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 		// Yangilangan profilni qaytarish
 		var user models.User
 		err = db.QueryRow(`
-			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), created_at, updated_at
 			FROM users WHERE id = $1
 		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 
@@ -604,7 +604,7 @@ func VerifyPhoneChange(db *sql.DB) http.HandlerFunc {
 		// Yangilangan profilni qaytarish
 		var user models.User
 		err = db.QueryRow(`
-			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), created_at, updated_at
 			FROM users WHERE id = $1
 		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 
@@ -821,7 +821,7 @@ func VerifyEmailChange(db *sql.DB) http.HandlerFunc {
 		// Yangilangan profilni qaytarish
 		var user models.User
 		err = db.QueryRow(`
-			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), created_at, updated_at
 			FROM users WHERE id = $1
 		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 

@@ -7,9 +7,9 @@ type User struct {
 	ID           string    `json:"id"` // UUID sifatida string
 	FullName     string    `json:"full_name"`
 	Phone        string    `json:"phone"`
-	Email        *string   `json:"email,omitempty"`    // Nullable - majburiy emas
-	AvatarURL    *string   `json:"avatar_url,omitempty"` // Nullable - rasm manzili
-	PasswordHash string    `json:"-"`                  // JSON'da ko'rsatilmasin
+	Email        string    `json:"email,omitempty"`      // COALESCE bilan bo'sh string qaytadi
+	AvatarURL    string    `json:"avatar_url,omitempty"` // COALESCE bilan bo'sh string qaytadi
+	PasswordHash string    `json:"-"`                    // JSON'da ko'rsatilmasin
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 }
