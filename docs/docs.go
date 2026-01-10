@@ -323,6 +323,210 @@ const docTemplate = `{
                 }
             }
         },
+        "/user/change-email/request": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Yangi email manziliga OTP yuboradi",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Email o'zgartirish - OTP yuborish",
+                "parameters": [
+                    {
+                        "description": "Yangi email manzili",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ChangeEmailRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/user/change-email/verify": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "OTP kodi orqali yangi emailni tasdiqlash",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Email o'zgartirish - OTP tasdiqlash",
+                "parameters": [
+                    {
+                        "description": "Yangi email va kod",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.VerifyEmailChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/user/change-phone/request": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Yangi telefon raqamiga OTP yuboradi",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Telefon o'zgartirish - OTP yuborish",
+                "parameters": [
+                    {
+                        "description": "Yangi telefon raqami",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ChangePhoneRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/user/change-phone/verify": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "OTP kodi orqali yangi telefonni tasdiqlash",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Telefon o'zgartirish - OTP tasdiqlash",
+                "parameters": [
+                    {
+                        "description": "Yangi telefon va kod",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.VerifyPhoneChangeRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.ProfileResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/models.AuthResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/user/me": {
             "get": {
                 "security": [
@@ -374,9 +578,9 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Foydalanuvchining ismini yangilaydi",
+                "description": "Foydalanuvchining ismini va rasmini yangilaydi. multipart/form-data formatida",
                 "consumes": [
-                    "application/json"
+                    "multipart/form-data"
                 ],
                 "produces": [
                     "application/json"
@@ -384,16 +588,19 @@ const docTemplate = `{
                 "tags": [
                     "user"
                 ],
-                "summary": "Profil ma'lumotlarini yangilash",
+                "summary": "Profil ma'lumotlarini yangilash (ism va avatar)",
                 "parameters": [
                     {
-                        "description": "Yangi ma'lumotlar",
-                        "name": "request",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/handlers.UpdateProfileRequest"
-                        }
+                        "type": "string",
+                        "description": "To'liq ism",
+                        "name": "full_name",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "file",
+                        "description": "Avatar rasmi",
+                        "name": "avatar",
+                        "in": "formData"
                     }
                 ],
                 "responses": {
@@ -464,6 +671,22 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "handlers.ChangeEmailRequest": {
+            "type": "object",
+            "properties": {
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.ChangePhoneRequest": {
+            "type": "object",
+            "properties": {
+                "new_phone": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.ProfileResponse": {
             "type": "object",
             "properties": {
@@ -478,10 +701,24 @@ const docTemplate = `{
                 }
             }
         },
-        "handlers.UpdateProfileRequest": {
+        "handlers.VerifyEmailChangeRequest": {
             "type": "object",
             "properties": {
-                "full_name": {
+                "code": {
+                    "type": "string"
+                },
+                "new_email": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.VerifyPhoneChangeRequest": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "new_phone": {
                     "type": "string"
                 }
             }
@@ -561,7 +798,15 @@ const docTemplate = `{
         "models.User": {
             "type": "object",
             "properties": {
+                "avatar_url": {
+                    "description": "Nullable - rasm manzili",
+                    "type": "string"
+                },
                 "created_at": {
+                    "type": "string"
+                },
+                "email": {
+                    "description": "Nullable - majburiy emas",
                     "type": "string"
                 },
                 "full_name": {

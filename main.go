@@ -116,10 +116,22 @@ func main() {
 	// User profile endpointlari (JWT himoyalangan)
 	http.HandleFunc("/api/user/me", corsMiddleware(handlers.JWTMiddleware(db, userMeHandler(db))))
 
-	// 3. Swagger UI
+	// Telefon o'zgartirish (JWT himoyalangan)
+	http.HandleFunc("/api/user/change-phone/request", corsMiddleware(handlers.JWTMiddleware(db, handlers.RequestPhoneChange(db))))
+	http.HandleFunc("/api/user/change-phone/verify", corsMiddleware(handlers.JWTMiddleware(db, handlers.VerifyPhoneChange(db))))
+
+	// Email o'zgartirish (JWT himoyalangan)
+	http.HandleFunc("/api/user/change-email/request", corsMiddleware(handlers.JWTMiddleware(db, handlers.RequestEmailChange(db))))
+	http.HandleFunc("/api/user/change-email/verify", corsMiddleware(handlers.JWTMiddleware(db, handlers.VerifyEmailChange(db))))
+
+	// 3. Static files - uploads papkasini serve qilish
+	fs := http.FileServer(http.Dir("uploads"))
+	http.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
+
+	// 4. Swagger UI
 	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 
-	// 4. Serverni yoqish
+	// 5. Serverni yoqish
 	fmt.Println("🚀 Server 8081-portda ishlayapti...")
 	fmt.Println("📱 Auth endpoints:")
 	fmt.Println("   POST /api/auth/send-otp")
@@ -131,9 +143,16 @@ func main() {
 	fmt.Println("")
 	fmt.Println("👤 User endpoints (JWT himoyalangan):")
 	fmt.Println("   GET    /api/user/me - Profilni olish")
-	fmt.Println("   PUT    /api/user/me - Profilni yangilash")
+	fmt.Println("   PUT    /api/user/me - Profilni yangilash (multipart)")
 	fmt.Println("   DELETE /api/user/me - Hisobni o'chirish")
 	fmt.Println("")
+	fmt.Println("📞 Telefon/Email o'zgartirish (JWT himoyalangan):")
+	fmt.Println("   POST /api/user/change-phone/request - OTP yuborish")
+	fmt.Println("   POST /api/user/change-phone/verify  - Telefon tasdiqlash")
+	fmt.Println("   POST /api/user/change-email/request - OTP yuborish")
+	fmt.Println("   POST /api/user/change-email/verify  - Email tasdiqlash")
+	fmt.Println("")
+	fmt.Println("📁 Static files: /uploads/avatars/*")
 	fmt.Println("📚 Swagger UI: http://45.93.201.167:8081/swagger/index.html")
 	fmt.Println("🔧 CORS enabled for all origins")
 	log.Fatal(http.ListenAndServe(":8081", nil))
@@ -146,6 +165,8 @@ func createUsersTable(db *sql.DB) {
 		id SERIAL PRIMARY KEY,
 		full_name VARCHAR(255) NOT NULL,
 		phone VARCHAR(20) UNIQUE NOT NULL,
+		email VARCHAR(255) UNIQUE,
+		avatar_url VARCHAR(500),
 		password_hash VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT NOW(),
 		updated_at TIMESTAMP DEFAULT NOW()
@@ -156,5 +177,29 @@ func createUsersTable(db *sql.DB) {
 		log.Printf("Users jadvalini yaratishda xatolik: %v", err)
 	} else {
 		fmt.Println("✅ Users jadvali tayyor!")
+	}
+
+	// Mavjud jadvalga yangi ustunlarni qo'shish (agar yo'q bo'lsa)
+	addColumnIfNotExists(db, "users", "email", "VARCHAR(255) UNIQUE")
+	addColumnIfNotExists(db, "users", "avatar_url", "VARCHAR(500)")
+}
+
+// addColumnIfNotExists - mavjud jadvalga ustun qo'shadi (agar yo'q bo'lsa)
+func addColumnIfNotExists(db *sql.DB, table, column, dataType string) {
+	query := fmt.Sprintf(`
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = '%s' AND column_name = '%s'
+			) THEN
+				ALTER TABLE %s ADD COLUMN %s %s;
+			END IF;
+		END $$;
+	`, table, column, table, column, dataType)
+
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Printf("Ustun qo'shishda xatolik (%s.%s): %v", table, column, err)
 	}
 }

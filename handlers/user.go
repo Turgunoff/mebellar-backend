@@ -3,13 +3,38 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"mebellar-backend/models"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+// ============================================
+// OTP STORE - Telefon va Email o'zgartirish uchun
+// ============================================
+
+// OTPData - OTP ma'lumotlari
+type OTPData struct {
+	Code      string
+	ExpiresAt time.Time
+	UserID    string
+}
+
+var (
+	phoneOTPStore = make(map[string]OTPData) // key: new_phone
+	emailOTPStore = make(map[string]OTPData) // key: new_email
+	otpMutex      sync.RWMutex
+)
+
+// generateOTP is defined in auth.go - reusing it here
 
 // ============================================
 // JWT MIDDLEWARE
@@ -131,9 +156,9 @@ func GetProfile(db *sql.DB) http.HandlerFunc {
 		// Bazadan foydalanuvchini olish
 		var user models.User
 		err := db.QueryRow(`
-			SELECT id, full_name, phone, created_at, updated_at
+			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
 			FROM users WHERE id = $1
-		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.CreatedAt, &user.UpdatedAt)
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -160,22 +185,18 @@ func GetProfile(db *sql.DB) http.HandlerFunc {
 }
 
 // ============================================
-// UPDATE PROFILE
+// UPDATE PROFILE (Multipart with Avatar)
 // ============================================
 
-// UpdateProfileRequest - profil yangilash so'rovi
-type UpdateProfileRequest struct {
-	FullName string `json:"full_name"`
-}
-
 // UpdateProfile godoc
-// @Summary      Profil ma'lumotlarini yangilash
-// @Description  Foydalanuvchining ismini yangilaydi
+// @Summary      Profil ma'lumotlarini yangilash (ism va avatar)
+// @Description  Foydalanuvchining ismini va rasmini yangilaydi. multipart/form-data formatida
 // @Tags         user
-// @Accept       json
+// @Accept       multipart/form-data
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body UpdateProfileRequest true "Yangi ma'lumotlar"
+// @Param        full_name formData string false "To'liq ism"
+// @Param        avatar formData file false "Avatar rasmi"
 // @Success      200  {object}  ProfileResponse
 // @Failure      400  {object}  models.AuthResponse
 // @Failure      401  {object}  models.AuthResponse
@@ -200,29 +221,92 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		var req UpdateProfileRequest
-		if err := decodeJSON(r, &req); err != nil {
+		// Parse multipart form (10MB limit)
+		err := r.ParseMultipartForm(10 << 20)
+		if err != nil {
+			log.Printf("ParseMultipartForm xatosi: %v", err)
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
-				Message: "Noto'g'ri so'rov formati",
+				Message: "So'rovni o'qib bo'lmadi",
 			})
 			return
 		}
 
-		if req.FullName == "" {
+		// Form fieldlarini olish
+		fullName := r.FormValue("full_name")
+
+		// Avatar faylini tekshirish
+		var avatarURL *string
+		file, handler, err := r.FormFile("avatar")
+		if err == nil {
+			defer file.Close()
+
+			// uploads/avatars papkasini yaratish
+			uploadDir := "uploads/avatars"
+			if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+				log.Printf("Papka yaratishda xatolik: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Server xatosi",
+				})
+				return
+			}
+
+			// Unikal fayl nomi yaratish
+			ext := filepath.Ext(handler.Filename)
+			newFileName := fmt.Sprintf("%s_%d%s", userID, time.Now().UnixNano(), ext)
+			filePath := filepath.Join(uploadDir, newFileName)
+
+			// Faylni saqlash
+			dst, err := os.Create(filePath)
+			if err != nil {
+				log.Printf("Fayl yaratishda xatolik: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Fayl saqlashda xatolik",
+				})
+				return
+			}
+			defer dst.Close()
+
+			if _, err := io.Copy(dst, file); err != nil {
+				log.Printf("Fayl nusxalashda xatolik: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Fayl saqlashda xatolik",
+				})
+				return
+			}
+
+			// Avatar URL yaratish
+			url := "/" + filePath
+			avatarURL = &url
+			log.Printf("✅ Avatar saqlandi: %s", filePath)
+		}
+
+		// SQL so'rov yaratish
+		var query string
+		var args []interface{}
+
+		if fullName != "" && avatarURL != nil {
+			query = `UPDATE users SET full_name = $1, avatar_url = $2, updated_at = NOW() WHERE id = $3`
+			args = []interface{}{fullName, *avatarURL, userID}
+		} else if fullName != "" {
+			query = `UPDATE users SET full_name = $1, updated_at = NOW() WHERE id = $2`
+			args = []interface{}{fullName, userID}
+		} else if avatarURL != nil {
+			query = `UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2`
+			args = []interface{}{*avatarURL, userID}
+		} else {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
-				Message: "Ism kiritilishi shart",
+				Message: "Hech narsa o'zgartirilmadi",
 			})
 			return
 		}
 
 		// Profilni yangilash
-		_, err := db.Exec(`
-			UPDATE users SET full_name = $1, updated_at = NOW()
-			WHERE id = $2
-		`, req.FullName, userID)
-
+		_, err = db.Exec(query, args...)
 		if err != nil {
 			log.Printf("Profile update xatosi: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -235,9 +319,9 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 		// Yangilangan profilni qaytarish
 		var user models.User
 		err = db.QueryRow(`
-			SELECT id, full_name, phone, created_at, updated_at
+			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
 			FROM users WHERE id = $1
-		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.CreatedAt, &user.UpdatedAt)
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
 
 		if err != nil {
 			log.Printf("Profile fetch xatosi: %v", err)
@@ -247,6 +331,8 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 			})
 			return
 		}
+
+		log.Printf("✅ Profil yangilandi: %s", user.FullName)
 
 		writeJSON(w, http.StatusOK, ProfileResponse{
 			Success: true,
@@ -315,6 +401,440 @@ func DeleteAccount(db *sql.DB) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
 			Message: "Hisobingiz muvaffaqiyatli o'chirildi",
+		})
+	}
+}
+
+// ============================================
+// CHANGE PHONE - OTP bilan telefon o'zgartirish
+// ============================================
+
+// ChangePhoneRequest - telefon o'zgartirish so'rovi
+type ChangePhoneRequest struct {
+	NewPhone string `json:"new_phone"`
+}
+
+// VerifyPhoneChangeRequest - telefon tasdiqlash so'rovi
+type VerifyPhoneChangeRequest struct {
+	NewPhone string `json:"new_phone"`
+	Code     string `json:"code"`
+}
+
+// RequestPhoneChange godoc
+// @Summary      Telefon o'zgartirish - OTP yuborish
+// @Description  Yangi telefon raqamiga OTP yuboradi
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body ChangePhoneRequest true "Yangi telefon raqami"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Router       /user/change-phone/request [post]
+func RequestPhoneChange(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi autentifikatsiya qilinmagan",
+			})
+			return
+		}
+
+		var req ChangePhoneRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		if req.NewPhone == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Telefon raqam kiritilishi shart",
+			})
+			return
+		}
+
+		// Telefon allaqachon ro'yxatdan o'tganmi tekshirish
+		var existingID string
+		err := db.QueryRow("SELECT id FROM users WHERE phone = $1", req.NewPhone).Scan(&existingID)
+		if err == nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Bu telefon raqam allaqachon ro'yxatdan o'tgan",
+			})
+			return
+		}
+
+		// OTP yaratish
+		code := generateOTP()
+		expiresAt := time.Now().Add(5 * time.Minute)
+
+		otpMutex.Lock()
+		phoneOTPStore[req.NewPhone] = OTPData{
+			Code:      code,
+			ExpiresAt: expiresAt,
+			UserID:    userID,
+		}
+		otpMutex.Unlock()
+
+		// Mock SMS - konsolga chiqarish
+		log.Printf("📱 [MOCK SMS] Telefon o'zgartirish kodi: %s -> %s", req.NewPhone, code)
+		log.Printf("⏰ Kod amal qilish muddati: %s", expiresAt.Format("15:04:05"))
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: fmt.Sprintf("Tasdiqlash kodi %s raqamiga yuborildi", req.NewPhone),
+		})
+	}
+}
+
+// VerifyPhoneChange godoc
+// @Summary      Telefon o'zgartirish - OTP tasdiqlash
+// @Description  OTP kodi orqali yangi telefonni tasdiqlash
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body VerifyPhoneChangeRequest true "Yangi telefon va kod"
+// @Success      200  {object}  ProfileResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Router       /user/change-phone/verify [post]
+func VerifyPhoneChange(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi autentifikatsiya qilinmagan",
+			})
+			return
+		}
+
+		var req VerifyPhoneChangeRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		// OTP ni tekshirish
+		otpMutex.RLock()
+		otpData, exists := phoneOTPStore[req.NewPhone]
+		otpMutex.RUnlock()
+
+		if !exists {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Avval tasdiqlash kodi so'rang",
+			})
+			return
+		}
+
+		// Muddati o'tganmi
+		if time.Now().After(otpData.ExpiresAt) {
+			otpMutex.Lock()
+			delete(phoneOTPStore, req.NewPhone)
+			otpMutex.Unlock()
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Tasdiqlash kodi muddati o'tgan",
+			})
+			return
+		}
+
+		// Kod to'g'rimi
+		if otpData.Code != req.Code {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri tasdiqlash kodi",
+			})
+			return
+		}
+
+		// UserID mos kelishini tekshirish
+		if otpData.UserID != userID {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov",
+			})
+			return
+		}
+
+		// Telefonni yangilash
+		_, err := db.Exec(`UPDATE users SET phone = $1, updated_at = NOW() WHERE id = $2`, req.NewPhone, userID)
+		if err != nil {
+			log.Printf("Phone update xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Telefon yangilashda xatolik",
+			})
+			return
+		}
+
+		// OTP ni o'chirish
+		otpMutex.Lock()
+		delete(phoneOTPStore, req.NewPhone)
+		otpMutex.Unlock()
+
+		// Yangilangan profilni qaytarish
+		var user models.User
+		err = db.QueryRow(`
+			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
+			FROM users WHERE id = $1
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
+
+		if err != nil {
+			log.Printf("Profile fetch xatosi: %v", err)
+		}
+
+		log.Printf("✅ Telefon o'zgartirildi: %s", req.NewPhone)
+
+		writeJSON(w, http.StatusOK, ProfileResponse{
+			Success: true,
+			Message: "Telefon raqam muvaffaqiyatli o'zgartirildi",
+			User:    &user,
+		})
+	}
+}
+
+// ============================================
+// CHANGE EMAIL - OTP bilan email o'zgartirish
+// ============================================
+
+// ChangeEmailRequest - email o'zgartirish so'rovi
+type ChangeEmailRequest struct {
+	NewEmail string `json:"new_email"`
+}
+
+// VerifyEmailChangeRequest - email tasdiqlash so'rovi
+type VerifyEmailChangeRequest struct {
+	NewEmail string `json:"new_email"`
+	Code     string `json:"code"`
+}
+
+// RequestEmailChange godoc
+// @Summary      Email o'zgartirish - OTP yuborish
+// @Description  Yangi email manziliga OTP yuboradi
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body ChangeEmailRequest true "Yangi email manzili"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Router       /user/change-email/request [post]
+func RequestEmailChange(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi autentifikatsiya qilinmagan",
+			})
+			return
+		}
+
+		var req ChangeEmailRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		if req.NewEmail == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Email manzil kiritilishi shart",
+			})
+			return
+		}
+
+		// Email allaqachon ro'yxatdan o'tganmi tekshirish
+		var existingID string
+		err := db.QueryRow("SELECT id FROM users WHERE email = $1", req.NewEmail).Scan(&existingID)
+		if err == nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Bu email manzil allaqachon ro'yxatdan o'tgan",
+			})
+			return
+		}
+
+		// OTP yaratish
+		code := generateOTP()
+		expiresAt := time.Now().Add(5 * time.Minute)
+
+		otpMutex.Lock()
+		emailOTPStore[req.NewEmail] = OTPData{
+			Code:      code,
+			ExpiresAt: expiresAt,
+			UserID:    userID,
+		}
+		otpMutex.Unlock()
+
+		// Mock Email - konsolga chiqarish
+		log.Printf("📧 [MOCK EMAIL] Email o'zgartirish kodi: %s -> %s", req.NewEmail, code)
+		log.Printf("⏰ Kod amal qilish muddati: %s", expiresAt.Format("15:04:05"))
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: fmt.Sprintf("Tasdiqlash kodi %s manziliga yuborildi", req.NewEmail),
+		})
+	}
+}
+
+// VerifyEmailChange godoc
+// @Summary      Email o'zgartirish - OTP tasdiqlash
+// @Description  OTP kodi orqali yangi emailni tasdiqlash
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body VerifyEmailChangeRequest true "Yangi email va kod"
+// @Success      200  {object}  ProfileResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Router       /user/change-email/verify [post]
+func VerifyEmailChange(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi autentifikatsiya qilinmagan",
+			})
+			return
+		}
+
+		var req VerifyEmailChangeRequest
+		if err := decodeJSON(r, &req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		// OTP ni tekshirish
+		otpMutex.RLock()
+		otpData, exists := emailOTPStore[req.NewEmail]
+		otpMutex.RUnlock()
+
+		if !exists {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Avval tasdiqlash kodi so'rang",
+			})
+			return
+		}
+
+		// Muddati o'tganmi
+		if time.Now().After(otpData.ExpiresAt) {
+			otpMutex.Lock()
+			delete(emailOTPStore, req.NewEmail)
+			otpMutex.Unlock()
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Tasdiqlash kodi muddati o'tgan",
+			})
+			return
+		}
+
+		// Kod to'g'rimi
+		if otpData.Code != req.Code {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri tasdiqlash kodi",
+			})
+			return
+		}
+
+		// UserID mos kelishini tekshirish
+		if otpData.UserID != userID {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov",
+			})
+			return
+		}
+
+		// Emailni yangilash
+		_, err := db.Exec(`UPDATE users SET email = $1, updated_at = NOW() WHERE id = $2`, req.NewEmail, userID)
+		if err != nil {
+			log.Printf("Email update xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Email yangilashda xatolik",
+			})
+			return
+		}
+
+		// OTP ni o'chirish
+		otpMutex.Lock()
+		delete(emailOTPStore, req.NewEmail)
+		otpMutex.Unlock()
+
+		// Yangilangan profilni qaytarish
+		var user models.User
+		err = db.QueryRow(`
+			SELECT id, full_name, phone, email, avatar_url, created_at, updated_at
+			FROM users WHERE id = $1
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
+
+		if err != nil {
+			log.Printf("Profile fetch xatosi: %v", err)
+		}
+
+		log.Printf("✅ Email o'zgartirildi: %s", req.NewEmail)
+
+		writeJSON(w, http.StatusOK, ProfileResponse{
+			Success: true,
+			Message: "Email manzil muvaffaqiyatli o'zgartirildi",
+			User:    &user,
 		})
 	}
 }

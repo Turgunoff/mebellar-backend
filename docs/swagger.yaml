@@ -1,5 +1,15 @@
 basePath: /api
 definitions:
+  handlers.ChangeEmailRequest:
+    properties:
+      new_email:
+        type: string
+    type: object
+  handlers.ChangePhoneRequest:
+    properties:
+      new_phone:
+        type: string
+    type: object
   handlers.ProfileResponse:
     properties:
       message:
@@ -9,9 +19,18 @@ definitions:
       user:
         $ref: '#/definitions/models.User'
     type: object
-  handlers.UpdateProfileRequest:
+  handlers.VerifyEmailChangeRequest:
     properties:
-      full_name:
+      code:
+        type: string
+      new_email:
+        type: string
+    type: object
+  handlers.VerifyPhoneChangeRequest:
+    properties:
+      code:
+        type: string
+      new_phone:
         type: string
     type: object
   models.AuthResponse:
@@ -62,7 +81,13 @@ definitions:
     type: object
   models.User:
     properties:
+      avatar_url:
+        description: Nullable - rasm manzili
+        type: string
       created_at:
+        type: string
+      email:
+        description: Nullable - majburiy emas
         type: string
       full_name:
         type: string
@@ -292,6 +317,134 @@ paths:
       summary: OTP kodni tasdiqlash
       tags:
       - auth
+  /user/change-email/request:
+    post:
+      consumes:
+      - application/json
+      description: Yangi email manziliga OTP yuboradi
+      parameters:
+      - description: Yangi email manzili
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ChangeEmailRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Email o'zgartirish - OTP yuborish
+      tags:
+      - user
+  /user/change-email/verify:
+    post:
+      consumes:
+      - application/json
+      description: OTP kodi orqali yangi emailni tasdiqlash
+      parameters:
+      - description: Yangi email va kod
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.VerifyEmailChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Email o'zgartirish - OTP tasdiqlash
+      tags:
+      - user
+  /user/change-phone/request:
+    post:
+      consumes:
+      - application/json
+      description: Yangi telefon raqamiga OTP yuboradi
+      parameters:
+      - description: Yangi telefon raqami
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.ChangePhoneRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Telefon o'zgartirish - OTP yuborish
+      tags:
+      - user
+  /user/change-phone/verify:
+    post:
+      consumes:
+      - application/json
+      description: OTP kodi orqali yangi telefonni tasdiqlash
+      parameters:
+      - description: Yangi telefon va kod
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.VerifyPhoneChangeRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Telefon o'zgartirish - OTP tasdiqlash
+      tags:
+      - user
   /user/me:
     delete:
       consumes:
@@ -348,15 +501,18 @@ paths:
       - user
     put:
       consumes:
-      - application/json
-      description: Foydalanuvchining ismini yangilaydi
+      - multipart/form-data
+      description: Foydalanuvchining ismini va rasmini yangilaydi. multipart/form-data
+        formatida
       parameters:
-      - description: Yangi ma'lumotlar
-        in: body
-        name: request
-        required: true
-        schema:
-          $ref: '#/definitions/handlers.UpdateProfileRequest'
+      - description: To'liq ism
+        in: formData
+        name: full_name
+        type: string
+      - description: Avatar rasmi
+        in: formData
+        name: avatar
+        type: file
       produces:
       - application/json
       responses:
@@ -378,7 +534,7 @@ paths:
             $ref: '#/definitions/models.AuthResponse'
       security:
       - BearerAuth: []
-      summary: Profil ma'lumotlarini yangilash
+      summary: Profil ma'lumotlarini yangilash (ism va avatar)
       tags:
       - user
 securityDefinitions:
