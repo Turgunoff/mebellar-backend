@@ -1,0 +1,36 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            # 1. Loyiha papkasiga kirish
+            cd ~/mebellar-backend
+
+            # 2. Eng yangi kodni olish
+            git pull origin main
+
+            # 3. Dasturni yangilab qurish (Build)
+            /usr/bin/go build -o server_app main.go
+
+            # 4. Servisni qayta ishga tushirish
+            systemctl restart mebellar
+
+            # 5. Statusni tekshirish
+            systemctl status mebellar --no-pager
