@@ -41,6 +41,24 @@ const (
 // @name Authorization
 // @description JWT token kiritish: "Bearer {token}"
 
+// userMeHandler - /api/user/me uchun method router
+func userMeHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			handlers.GetProfile(db)(w, r)
+		case http.MethodPut:
+			handlers.UpdateProfile(db)(w, r)
+		case http.MethodDelete:
+			handlers.DeleteAccount(db)(w, r)
+		default:
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte(`{"success":false,"message":"Bu metod qo'llab-quvvatlanmaydi"}`))
+		}
+	}
+}
+
 // CORS middleware - barcha so'rovlarga CORS headerlarini qo'shadi
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -95,6 +113,9 @@ func main() {
 	http.HandleFunc("/api/auth/forgot-password", corsMiddleware(handlers.ForgotPassword(db)))
 	http.HandleFunc("/api/auth/reset-password", corsMiddleware(handlers.ResetPassword(db)))
 
+	// User profile endpointlari (JWT himoyalangan)
+	http.HandleFunc("/api/user/me", corsMiddleware(handlers.JWTMiddleware(db, userMeHandler(db))))
+
 	// 3. Swagger UI
 	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 
@@ -107,6 +128,11 @@ func main() {
 	fmt.Println("   POST /api/auth/login")
 	fmt.Println("   POST /api/auth/forgot-password")
 	fmt.Println("   POST /api/auth/reset-password")
+	fmt.Println("")
+	fmt.Println("👤 User endpoints (JWT himoyalangan):")
+	fmt.Println("   GET    /api/user/me - Profilni olish")
+	fmt.Println("   PUT    /api/user/me - Profilni yangilash")
+	fmt.Println("   DELETE /api/user/me - Hisobni o'chirish")
 	fmt.Println("")
 	fmt.Println("📚 Swagger UI: http://45.93.201.167:8081/swagger/index.html")
 	fmt.Println("🔧 CORS enabled for all origins")
