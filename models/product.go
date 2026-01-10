@@ -117,10 +117,4 @@ type ProductsResponse struct {
 	Count    int       `json:"count"`
 }
 
-// Category - kategoriya modeli (kelajak uchun)
-type Category struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	IconName string  `json:"icon_name"`
-	ParentID *string `json:"parent_id,omitempty"`
-}
+// Category - kategoriya modeli category.go faylida aniqlangan

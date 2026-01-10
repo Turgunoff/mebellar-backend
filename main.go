@@ -102,10 +102,14 @@ func main() {
 	// Users jadvalini yaratish (agar mavjud bo'lmasa)
 	createUsersTable(db)
 
-	// Products jadvalini yaratish va seed qilish
-	seed.SeedProducts(db)
+	// Kategoriyalar va mahsulotlarni seed qilish
+	seed.SeedAll(db)
 
 	// 2. Marshrutlar (Routes) - CORS middleware bilan
+	// Kategoriyalar
+	http.HandleFunc("/api/categories", corsMiddleware(handlers.GetCategories(db)))
+	http.HandleFunc("/api/categories/", corsMiddleware(handlers.GetCategoryByID(db))) // /api/categories/{id}
+
 	// Mahsulotlar
 	http.HandleFunc("/api/products", corsMiddleware(handlers.GetProducts(db)))
 	http.HandleFunc("/api/products/new", corsMiddleware(handlers.GetNewArrivals(db)))
@@ -141,10 +145,16 @@ func main() {
 	// 5. Serverni yoqish
 	fmt.Println("🚀 Server 8081-portda ishlayapti...")
 	fmt.Println("")
+	fmt.Println("📂 Categories endpoints:")
+	fmt.Println("   GET /api/categories       - Barcha kategoriyalar (daraxt)")
+	fmt.Println("   GET /api/categories?flat=true - Tekis ro'yxat")
+	fmt.Println("   GET /api/categories/{id}  - Bitta kategoriya")
+	fmt.Println("")
 	fmt.Println("🛋️ Products endpoints:")
-	fmt.Println("   GET /api/products         - Barcha mahsulotlar (?category=...)")
+	fmt.Println("   GET /api/products         - Barcha mahsulotlar (?category_id=...)")
 	fmt.Println("   GET /api/products/new     - Yangi mahsulotlar")
 	fmt.Println("   GET /api/products/popular - Mashhur mahsulotlar")
+	fmt.Println("   GET /api/products/{id}    - Bitta mahsulot")
 	fmt.Println("")
 	fmt.Println("📱 Auth endpoints:")
 	fmt.Println("   POST /api/auth/send-otp")
