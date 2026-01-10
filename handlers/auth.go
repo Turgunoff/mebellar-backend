@@ -70,9 +70,17 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 	json.NewEncoder(w).Encode(data)
 }
 
-// ============================================
-// POST /api/auth/send-otp
-// ============================================
+// SendOTP godoc
+// @Summary      OTP kod yuborish
+// @Description  Telefon raqamiga 5 xonali tasdiqlash kodi yuboradi (Mock SMS - konsolga chiqadi)
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.SendOTPRequest true "Telefon raqami"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      405  {object}  models.AuthResponse
+// @Router       /auth/send-otp [post]
 func SendOTP(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -117,9 +125,17 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// ============================================
-// POST /api/auth/verify-otp
-// ============================================
+// VerifyOTP godoc
+// @Summary      OTP kodni tasdiqlash
+// @Description  Yuborilgan OTP kodni tekshiradi va telefon raqamini tasdiqlaydi
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.VerifyOTPRequest true "Telefon va OTP kod"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      405  {object}  models.AuthResponse
+// @Router       /auth/verify-otp [post]
 func VerifyOTP(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -168,9 +184,18 @@ func VerifyOTP(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// ============================================
-// POST /api/auth/register
-// ============================================
+// Register godoc
+// @Summary      Ro'yxatdan o'tish
+// @Description  Yangi foydalanuvchi yaratadi. Avval telefon raqami OTP orqali tasdiqlanishi kerak.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.RegisterRequest true "Ro'yxatdan o'tish ma'lumotlari"
+// @Success      201  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      409  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /auth/register [post]
 func Register(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -290,9 +315,18 @@ func Register(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// ============================================
-// POST /api/auth/login
-// ============================================
+// Login godoc
+// @Summary      Tizimga kirish
+// @Description  Telefon raqami va parol orqali tizimga kirish. JWT token qaytaradi.
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.LoginRequest true "Login ma'lumotlari"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /auth/login [post]
 func Login(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -366,9 +400,18 @@ func Login(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// ============================================
-// POST /api/auth/forgot-password
-// ============================================
+// ForgotPassword godoc
+// @Summary      Parolni unutdim
+// @Description  Telefon raqamiga parolni tiklash uchun OTP kod yuboradi
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.ForgotPasswordRequest true "Telefon raqami"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /auth/forgot-password [post]
 func ForgotPassword(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
@@ -433,9 +476,18 @@ func ForgotPassword(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// ============================================
-// POST /api/auth/reset-password
-// ============================================
+// ResetPassword godoc
+// @Summary      Parolni tiklash
+// @Description  OTP kod orqali yangi parol o'rnatadi
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request body models.ResetPasswordRequest true "Parolni tiklash ma'lumotlari"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /auth/reset-password [post]
 func ResetPassword(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

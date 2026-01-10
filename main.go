@@ -4,9 +4,13 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"mebellar-backend/handlers"
 	"net/http"
 
+	"mebellar-backend/handlers"
+
+	_ "mebellar-backend/docs" // Swagger docs - swag init dan keyin paydo bo'ladi
+
+	httpSwagger "github.com/swaggo/http-swagger"
 	_ "github.com/lib/pq"
 )
 
@@ -17,6 +21,25 @@ const (
 	password = "MebelStrong2024!"
 	dbname   = "mebellar_olami"
 )
+
+// @title           Mebellar Olami API
+// @version         1.0
+// @description     Bu Flutter ilovasi uchun Backend API serveri. Mebel sotish platformasi.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.email  support@mebellar.uz
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host      45.93.201.167:8081
+// @BasePath  /api
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description JWT token kiritish: "Bearer {token}"
 
 // CORS middleware - barcha so'rovlarga CORS headerlarini qo'shadi
 func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -72,7 +95,10 @@ func main() {
 	http.HandleFunc("/api/auth/forgot-password", corsMiddleware(handlers.ForgotPassword(db)))
 	http.HandleFunc("/api/auth/reset-password", corsMiddleware(handlers.ResetPassword(db)))
 
-	// 3. Serverni yoqish
+	// 3. Swagger UI
+	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
+
+	// 4. Serverni yoqish
 	fmt.Println("🚀 Server 8081-portda ishlayapti...")
 	fmt.Println("📱 Auth endpoints:")
 	fmt.Println("   POST /api/auth/send-otp")
@@ -82,6 +108,7 @@ func main() {
 	fmt.Println("   POST /api/auth/forgot-password")
 	fmt.Println("   POST /api/auth/reset-password")
 	fmt.Println("")
+	fmt.Println("📚 Swagger UI: http://45.93.201.167:8081/swagger/index.html")
 	fmt.Println("🔧 CORS enabled for all origins")
 	log.Fatal(http.ListenAndServe(":8081", nil))
 }
