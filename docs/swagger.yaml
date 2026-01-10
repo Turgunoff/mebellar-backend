@@ -1,0 +1,390 @@
+basePath: /api
+definitions:
+  handlers.ProfileResponse:
+    properties:
+      message:
+        type: string
+      success:
+        type: boolean
+      user:
+        $ref: '#/definitions/models.User'
+    type: object
+  handlers.UpdateProfileRequest:
+    properties:
+      full_name:
+        type: string
+    type: object
+  models.AuthResponse:
+    properties:
+      message:
+        type: string
+      success:
+        type: boolean
+      token:
+        type: string
+      user:
+        $ref: '#/definitions/models.User'
+    type: object
+  models.ForgotPasswordRequest:
+    properties:
+      phone:
+        type: string
+    type: object
+  models.LoginRequest:
+    properties:
+      password:
+        type: string
+      phone:
+        type: string
+    type: object
+  models.RegisterRequest:
+    properties:
+      full_name:
+        type: string
+      password:
+        type: string
+      phone:
+        type: string
+    type: object
+  models.ResetPasswordRequest:
+    properties:
+      code:
+        type: string
+      new_password:
+        type: string
+      phone:
+        type: string
+    type: object
+  models.SendOTPRequest:
+    properties:
+      phone:
+        type: string
+    type: object
+  models.User:
+    properties:
+      created_at:
+        type: string
+      full_name:
+        type: string
+      id:
+        description: UUID sifatida string
+        type: string
+      phone:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  models.VerifyOTPRequest:
+    properties:
+      code:
+        type: string
+      phone:
+        type: string
+    type: object
+host: 45.93.201.167:8081
+info:
+  contact:
+    email: support@mebellar.uz
+    name: API Support
+  description: Bu Flutter ilovasi uchun Backend API serveri. Mebel sotish platformasi.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Mebellar Olami API
+  version: "1.0"
+paths:
+  /auth/forgot-password:
+    post:
+      consumes:
+      - application/json
+      description: Telefon raqamiga parolni tiklash uchun OTP kod yuboradi
+      parameters:
+      - description: Telefon raqami
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ForgotPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      summary: Parolni unutdim
+      tags:
+      - auth
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Telefon raqami va parol orqali tizimga kirish. JWT token qaytaradi.
+      parameters:
+      - description: Login ma'lumotlari
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.LoginRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      summary: Tizimga kirish
+      tags:
+      - auth
+  /auth/register:
+    post:
+      consumes:
+      - application/json
+      description: Yangi foydalanuvchi yaratadi. Avval telefon raqami OTP orqali tasdiqlanishi
+        kerak.
+      parameters:
+      - description: Ro'yxatdan o'tish ma'lumotlari
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.RegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      summary: Ro'yxatdan o'tish
+      tags:
+      - auth
+  /auth/reset-password:
+    post:
+      consumes:
+      - application/json
+      description: OTP kod orqali yangi parol o'rnatadi
+      parameters:
+      - description: Parolni tiklash ma'lumotlari
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.ResetPasswordRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      summary: Parolni tiklash
+      tags:
+      - auth
+  /auth/send-otp:
+    post:
+      consumes:
+      - application/json
+      description: Telefon raqamiga 5 xonali tasdiqlash kodi yuboradi (Mock SMS -
+        konsolga chiqadi)
+      parameters:
+      - description: Telefon raqami
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.SendOTPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      summary: OTP kod yuborish
+      tags:
+      - auth
+  /auth/verify-otp:
+    post:
+      consumes:
+      - application/json
+      description: Yuborilgan OTP kodni tekshiradi va telefon raqamini tasdiqlaydi
+      parameters:
+      - description: Telefon va OTP kod
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.VerifyOTPRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "405":
+          description: Method Not Allowed
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      summary: OTP kodni tasdiqlash
+      tags:
+      - auth
+  /user/me:
+    delete:
+      consumes:
+      - application/json
+      description: Foydalanuvchi hisobini butunlay o'chiradi (App Store talabi)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Hisobni o'chirish
+      tags:
+      - user
+    get:
+      consumes:
+      - application/json
+      description: JWT token orqali autentifikatsiya qilingan foydalanuvchining ma'lumotlarini
+        qaytaradi
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProfileResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Foydalanuvchi profilini olish
+      tags:
+      - user
+    put:
+      consumes:
+      - application/json
+      description: Foydalanuvchining ismini yangilaydi
+      parameters:
+      - description: Yangi ma'lumotlar
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.ProfileResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/models.AuthResponse'
+      security:
+      - BearerAuth: []
+      summary: Profil ma'lumotlarini yangilash
+      tags:
+      - user
+securityDefinitions:
+  BearerAuth:
+    description: 'JWT token kiritish: "Bearer {token}"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"
