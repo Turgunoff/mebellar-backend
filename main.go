@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"mebellar-backend/handlers"
+	"mebellar-backend/pkg/seed"
 
 	_ "mebellar-backend/docs" // Swagger docs - swag init dan keyin paydo bo'ladi
 
@@ -101,9 +102,15 @@ func main() {
 	// Users jadvalini yaratish (agar mavjud bo'lmasa)
 	createUsersTable(db)
 
+	// Products jadvalini yaratish va seed qilish
+	seed.SeedProducts(db)
+
 	// 2. Marshrutlar (Routes) - CORS middleware bilan
 	// Mahsulotlar
 	http.HandleFunc("/api/products", corsMiddleware(handlers.GetProducts(db)))
+	http.HandleFunc("/api/products/new", corsMiddleware(handlers.GetNewArrivals(db)))
+	http.HandleFunc("/api/products/popular", corsMiddleware(handlers.GetPopularProducts(db)))
+	http.HandleFunc("/api/products/", corsMiddleware(handlers.GetProductByID(db))) // /api/products/{id}
 
 	// Autentifikatsiya endpointlari
 	http.HandleFunc("/api/auth/send-otp", corsMiddleware(handlers.SendOTP(db)))
@@ -133,6 +140,12 @@ func main() {
 
 	// 5. Serverni yoqish
 	fmt.Println("🚀 Server 8081-portda ishlayapti...")
+	fmt.Println("")
+	fmt.Println("🛋️ Products endpoints:")
+	fmt.Println("   GET /api/products         - Barcha mahsulotlar (?category=...)")
+	fmt.Println("   GET /api/products/new     - Yangi mahsulotlar")
+	fmt.Println("   GET /api/products/popular - Mashhur mahsulotlar")
+	fmt.Println("")
 	fmt.Println("📱 Auth endpoints:")
 	fmt.Println("   POST /api/auth/send-otp")
 	fmt.Println("   POST /api/auth/verify-otp")
@@ -147,12 +160,12 @@ func main() {
 	fmt.Println("   DELETE /api/user/me - Hisobni o'chirish")
 	fmt.Println("")
 	fmt.Println("📞 Telefon/Email o'zgartirish (JWT himoyalangan):")
-	fmt.Println("   POST /api/user/change-phone/request - OTP yuborish")
-	fmt.Println("   POST /api/user/change-phone/verify  - Telefon tasdiqlash")
-	fmt.Println("   POST /api/user/change-email/request - OTP yuborish")
-	fmt.Println("   POST /api/user/change-email/verify  - Email tasdiqlash")
+	fmt.Println("   POST /api/user/change-phone/request")
+	fmt.Println("   POST /api/user/change-phone/verify")
+	fmt.Println("   POST /api/user/change-email/request")
+	fmt.Println("   POST /api/user/change-email/verify")
 	fmt.Println("")
-	fmt.Println("📁 Static files: /uploads/avatars/*")
+	fmt.Println("📁 Static files: /uploads/*")
 	fmt.Println("📚 Swagger UI: http://45.93.201.167:8081/swagger/index.html")
 	fmt.Println("🔧 CORS enabled for all origins")
 	log.Fatal(http.ListenAndServe(":8081", nil))
