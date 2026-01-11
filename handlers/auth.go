@@ -72,8 +72,8 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 }
 
 // SendOTP godoc
-// @Summary      OTP kod yuborish
-// @Description  Telefon raqamiga 5 xonali tasdiqlash kodi yuboradi (Mock SMS - konsolga chiqadi)
+// @Summary      OTP kod yuborish (ro'yxatdan o'tish uchun)
+// @Description  Telefon raqamiga 5 xonali tasdiqlash kodi yuboradi (Mock SMS - konsolga chiqadi). Avval bazadan telefon mavjudligini tekshiradi.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -81,6 +81,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 // @Success      200  {object}  models.AuthResponse
 // @Failure      400  {object}  models.AuthResponse
 // @Failure      405  {object}  models.AuthResponse
+// @Failure      409  {object}  models.AuthResponse
 // @Router       /auth/send-otp [post]
 func SendOTP(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -110,6 +111,19 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Bazadan telefon raqami mavjudligini tekshirish
+		var existingID string
+		err := db.QueryRow("SELECT id FROM users WHERE phone = $1", req.Phone).Scan(&existingID)
+		if err == nil {
+			// Telefon raqami allaqachon mavjud
+			writeJSON(w, http.StatusConflict, models.AuthResponse{
+				Success: false,
+				Message: "Bu telefon raqami allaqachon ro'yxatdan o'tgan",
+			})
+			return
+		}
+		// sql.ErrNoRows bo'lsa - yaxshi, davom etamiz
+
 		// 5 xonali OTP yaratish
 		code := generateOTP()
 
@@ -117,7 +131,8 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 		otpStore[req.Phone] = code
 
 		// MOCK SMS - konsolga chiqarish
-		fmt.Printf("📱 MOCK SMS to %s: %s\n", req.Phone, code)
+		log.Printf("📱 [REGISTRATION OTP] to %s: %s", req.Phone, code)
+		fmt.Printf("📱 MOCK SMS (Registration) to %s: %s\n", req.Phone, code)
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
@@ -478,7 +493,8 @@ func ForgotPassword(db *sql.DB) http.HandlerFunc {
 		// OTP'ni saqlash
 		otpStore[req.Phone] = code
 
-		// MOCK SMS - konsolga chiqarish
+		// MOCK SMS - konsolga chiqarish (logda ham ko'rinadi)
+		log.Printf("📱 [PASSWORD RESET OTP] to %s: %s", req.Phone, code)
 		fmt.Printf("📱 MOCK SMS (Password Reset) to %s: %s\n", req.Phone, code)
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
