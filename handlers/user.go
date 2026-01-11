@@ -840,6 +840,69 @@ func VerifyEmailChange(db *sql.DB) http.HandlerFunc {
 }
 
 // ============================================
+// BECOME SELLER - Role ni seller ga o'zgartirish
+// ============================================
+
+// BecomeSeller godoc
+// @Summary      Sotuvchi bo'lish
+// @Description  Customer rolini seller ga o'zgartiradi
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /user/become-seller [post]
+func BecomeSeller(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi autentifikatsiya qilinmagan",
+			})
+			return
+		}
+
+		// Rolni seller ga o'zgartirish
+		result, err := db.Exec(`UPDATE users SET role = 'seller', updated_at = NOW() WHERE id = $1`, userID)
+		if err != nil {
+			log.Printf("Become seller xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Sotuvchi bo'lishda xatolik yuz berdi",
+			})
+			return
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi topilmadi",
+			})
+			return
+		}
+
+		log.Printf("🎉 User became seller: %s", userID)
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: "Tabriklaymiz! Siz endi sotuvchisiz.",
+		})
+	}
+}
+
+// ============================================
 // HELPER FUNCTIONS
 // ============================================
 

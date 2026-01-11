@@ -135,6 +135,9 @@ func main() {
 	http.HandleFunc("/api/user/change-email/request", corsMiddleware(handlers.JWTMiddleware(db, handlers.RequestEmailChange(db))))
 	http.HandleFunc("/api/user/change-email/verify", corsMiddleware(handlers.JWTMiddleware(db, handlers.VerifyEmailChange(db))))
 
+	// Sotuvchi bo'lish (JWT himoyalangan)
+	http.HandleFunc("/api/user/become-seller", corsMiddleware(handlers.JWTMiddleware(db, handlers.BecomeSeller(db))))
+
 	// 3. Static files - uploads papkasini serve qilish
 	fs := http.FileServer(http.Dir("uploads"))
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
@@ -174,6 +177,9 @@ func main() {
 	fmt.Println("   POST /api/user/change-phone/verify")
 	fmt.Println("   POST /api/user/change-email/request")
 	fmt.Println("   POST /api/user/change-email/verify")
+	fmt.Println("")
+	fmt.Println("🏪 Sotuvchi bo'lish (JWT himoyalangan):")
+	fmt.Println("   POST /api/user/become-seller")
 	fmt.Println("")
 	fmt.Println("📁 Static files: /uploads/*")
 	fmt.Println("📚 Swagger UI: http://45.93.201.167:8081/swagger/index.html")
