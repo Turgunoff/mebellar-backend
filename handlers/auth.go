@@ -50,11 +50,12 @@ func checkPassword(password, hash string) bool {
 	return err == nil
 }
 
-// generateJWT - JWT token yaratadi
-func generateJWT(userID string, phone string) (string, error) {
+// generateJWT - JWT token yaratadi (role bilan)
+func generateJWT(userID string, phone string, role string) (string, error) {
 	claims := jwt.MapClaims{
 		"user_id": userID,
 		"phone":   phone,
+		"role":    role,
 		"exp":     time.Now().Add(time.Hour * 24 * 7).Unix(), // 7 kun amal qiladi
 		"iat":     time.Now().Unix(),
 	}
@@ -271,28 +272,38 @@ func Register(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Foydalanuvchini bazaga qo'shish
-		var userID string
-		err = db.QueryRow(`
-			INSERT INTO users (full_name, phone, password_hash, created_at, updated_at)
-			VALUES ($1, $2, $3, NOW(), NOW())
-			RETURNING id
-		`, req.FullName, req.Phone, passwordHash).Scan(&userID)
+	// Role ni aniqlash - agar bo'sh bo'lsa "customer"
+	role := req.Role
+	if role == "" {
+		role = "customer"
+	}
+	// Faqat ruxsat etilgan role'lar
+	if role != "customer" && role != "seller" && role != "admin" {
+		role = "customer"
+	}
 
-		if err != nil {
-			log.Println("User insert xatosi:", err)
-			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
-				Success: false,
-				Message: "Foydalanuvchi yaratishda xatolik",
-			})
-			return
-		}
+	// Foydalanuvchini bazaga qo'shish
+	var userID string
+	err = db.QueryRow(`
+		INSERT INTO users (full_name, phone, password_hash, role, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
+		RETURNING id
+	`, req.FullName, req.Phone, passwordHash, role).Scan(&userID)
 
-		// Verified holatni o'chirish (faqat bir marta ishlatish uchun)
-		delete(verifiedPhones, req.Phone)
+	if err != nil {
+		log.Println("User insert xatosi:", err)
+		writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+			Success: false,
+			Message: "Foydalanuvchi yaratishda xatolik",
+		})
+		return
+	}
 
-		// JWT token yaratish
-		token, err := generateJWT(userID, req.Phone)
+	// Verified holatni o'chirish (faqat bir marta ishlatish uchun)
+	delete(verifiedPhones, req.Phone)
+
+	// JWT token yaratish (role bilan)
+	token, err := generateJWT(userID, req.Phone, role)
 		if err != nil {
 			log.Println("JWT xatosi:", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -302,16 +313,17 @@ func Register(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusCreated, models.AuthResponse{
-			Success: true,
-			Message: "Ro'yxatdan o'tish muvaffaqiyatli",
-			Token:   token,
-			User: &models.User{
-				ID:       userID,
-				FullName: req.FullName,
-				Phone:    req.Phone,
-			},
-		})
+	writeJSON(w, http.StatusCreated, models.AuthResponse{
+		Success: true,
+		Message: "Ro'yxatdan o'tish muvaffaqiyatli",
+		Token:   token,
+		User: &models.User{
+			ID:       userID,
+			FullName: req.FullName,
+			Phone:    req.Phone,
+			Role:     role,
+		},
+	})
 	}
 }
 
@@ -346,13 +358,13 @@ func Login(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Foydalanuvchini topish
-		var user models.User
-		var passwordHash string
-		err := db.QueryRow(`
-			SELECT id, full_name, phone, password_hash, created_at, updated_at
-			FROM users WHERE phone = $1
-		`, req.Phone).Scan(&user.ID, &user.FullName, &user.Phone, &passwordHash, &user.CreatedAt, &user.UpdatedAt)
+	// Foydalanuvchini topish
+	var user models.User
+	var passwordHash string
+	err := db.QueryRow(`
+		SELECT id, full_name, phone, COALESCE(role, 'customer'), password_hash, created_at, updated_at
+		FROM users WHERE phone = $1
+	`, req.Phone).Scan(&user.ID, &user.FullName, &user.Phone, &user.Role, &passwordHash, &user.CreatedAt, &user.UpdatedAt)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
@@ -371,17 +383,17 @@ func Login(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Parolni tekshirish
-		if !checkPassword(req.Password, passwordHash) {
-			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
-				Success: false,
-				Message: "Telefon raqami yoki parol noto'g'ri",
-			})
-			return
-		}
+	// Parolni tekshirish
+	if !checkPassword(req.Password, passwordHash) {
+		writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+			Success: false,
+			Message: "Telefon raqami yoki parol noto'g'ri",
+		})
+		return
+	}
 
-		// JWT token yaratish
-		token, err := generateJWT(user.ID, user.Phone)
+	// JWT token yaratish (role bilan)
+	token, err := generateJWT(user.ID, user.Phone, user.Role)
 		if err != nil {
 			log.Println("JWT xatosi:", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{

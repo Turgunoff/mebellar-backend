@@ -9,6 +9,7 @@ type User struct {
 	Phone        string    `json:"phone"`
 	Email        string    `json:"email,omitempty"`      // COALESCE bilan bo'sh string qaytadi
 	AvatarURL    string    `json:"avatar_url,omitempty"` // COALESCE bilan bo'sh string qaytadi
+	Role         string    `json:"role"`                 // customer, seller, admin
 	PasswordHash string    `json:"-"`                    // JSON'da ko'rsatilmasin
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -30,6 +31,7 @@ type RegisterRequest struct {
 	FullName string `json:"full_name"`
 	Phone    string `json:"phone"`
 	Password string `json:"password"`
+	Role     string `json:"role"` // customer, seller - agar bo'sh bo'lsa customer
 }
 
 // LoginRequest - kirish uchun so'rov
