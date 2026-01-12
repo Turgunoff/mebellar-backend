@@ -895,3 +895,229 @@ func GetCancellationStats(db *sql.DB) http.HandlerFunc {
 		})
 	}
 }
+
+// ============================================
+// GET DASHBOARD STATS (Aggregation)
+// ============================================
+
+// GetDashboardStats godoc
+// @Summary      Dashboard statistikasi
+// @Description  Sotuvchi bosh sahifasi uchun barcha statistikalar
+// @Tags         seller-dashboard
+// @Produce      json
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Success      200  {object}  models.DashboardStatsResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/dashboard/stats [get]
+func GetDashboardStats(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		var stats models.DashboardStats
+
+		// 1. Calculate Shop Rating (based on completion rate)
+		var completedCount, cancelledCount int
+		db.QueryRow(`
+			SELECT 
+				COALESCE(SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END), 0),
+				COALESCE(SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END), 0)
+			FROM orders WHERE shop_id = $1
+		`, shopID).Scan(&completedCount, &cancelledCount)
+
+		totalOrders := completedCount + cancelledCount
+		if totalOrders > 0 {
+			// Rating based on completion rate (5.0 max)
+			completionRate := float64(completedCount) / float64(totalOrders)
+			stats.ShopRating = 3.0 + (completionRate * 2.0) // 3.0 to 5.0 range
+			stats.ShopRating = float64(int(stats.ShopRating*10)) / 10 // Round to 1 decimal
+		} else {
+			stats.ShopRating = 5.0 // Default for new shops
+		}
+
+		// 2. Total Revenue (This Month - Completed orders)
+		var thisMonthRevenue float64
+		db.QueryRow(`
+			SELECT COALESCE(SUM(total_amount), 0) 
+			FROM orders 
+			WHERE shop_id = $1 
+			AND status = 'completed'
+			AND created_at >= DATE_TRUNC('month', CURRENT_DATE)
+		`, shopID).Scan(&thisMonthRevenue)
+		stats.TotalRevenue = thisMonthRevenue
+
+		// 3. Revenue Growth (vs Last Month)
+		var lastMonthRevenue float64
+		db.QueryRow(`
+			SELECT COALESCE(SUM(total_amount), 0) 
+			FROM orders 
+			WHERE shop_id = $1 
+			AND status = 'completed'
+			AND created_at >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+			AND created_at < DATE_TRUNC('month', CURRENT_DATE)
+		`, shopID).Scan(&lastMonthRevenue)
+
+		if lastMonthRevenue > 0 {
+			stats.RevenueGrowth = ((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue) * 100
+			stats.RevenueGrowth = float64(int(stats.RevenueGrowth*10)) / 10 // Round
+		} else if thisMonthRevenue > 0 {
+			stats.RevenueGrowth = 100.0 // 100% growth if last month was 0
+		}
+
+		// 4. Chart Data (Last 7 days revenue)
+		chartQuery := `
+			SELECT 
+				TO_CHAR(d.date, 'DD.MM') as label,
+				COALESCE(SUM(o.total_amount), 0) as revenue
+			FROM (
+				SELECT generate_series(
+					CURRENT_DATE - INTERVAL '6 days',
+					CURRENT_DATE,
+					'1 day'::interval
+				)::date as date
+			) d
+			LEFT JOIN orders o ON DATE(o.created_at) = d.date 
+				AND o.shop_id = $1 
+				AND o.status = 'completed'
+			GROUP BY d.date
+			ORDER BY d.date ASC
+		`
+		rows, err := db.Query(chartQuery, shopID)
+		if err != nil {
+			log.Printf("⚠️ Chart data query error: %v", err)
+		} else {
+			defer rows.Close()
+			for rows.Next() {
+				var label string
+				var revenue float64
+				if err := rows.Scan(&label, &revenue); err == nil {
+					stats.ChartLabels = append(stats.ChartLabels, label)
+					// Convert to millions for chart display
+					stats.ChartData = append(stats.ChartData, revenue/1000000)
+				}
+			}
+		}
+
+		// Ensure arrays are not null
+		if stats.ChartData == nil {
+			stats.ChartData = []float64{0, 0, 0, 0, 0, 0, 0}
+			stats.ChartLabels = []string{"", "", "", "", "", "", ""}
+		}
+
+		// 5. Active Products Count
+		db.QueryRow(`
+			SELECT COUNT(*) FROM products 
+			WHERE shop_id = $1 AND is_active = true
+		`, shopID).Scan(&stats.ActiveProducts)
+
+		// 6. Total Orders Count (All time)
+		db.QueryRow(`
+			SELECT COUNT(*) FROM orders WHERE shop_id = $1
+		`, shopID).Scan(&stats.TotalOrdersCount)
+
+		// 7. Today's Sales Count
+		db.QueryRow(`
+			SELECT COUNT(*) FROM orders 
+			WHERE shop_id = $1 
+			AND DATE(created_at) = CURRENT_DATE
+		`, shopID).Scan(&stats.TodaySalesCount)
+
+		// 8. Pending Orders Count (new + confirmed)
+		db.QueryRow(`
+			SELECT COUNT(*) FROM orders 
+			WHERE shop_id = $1 
+			AND status IN ('new', 'confirmed')
+		`, shopID).Scan(&stats.PendingOrdersCount)
+
+		// 9. Recent Orders (Top 5 with product info)
+		recentQuery := `
+			SELECT 
+				o.id,
+				o.client_name,
+				COALESCE(oi.product_name, 'Mahsulot') as product_name,
+				COALESCE(oi.product_image, '') as product_image,
+				o.total_amount,
+				o.status,
+				o.created_at
+			FROM orders o
+			LEFT JOIN LATERAL (
+				SELECT product_name, product_image 
+				FROM order_items 
+				WHERE order_id = o.id 
+				LIMIT 1
+			) oi ON true
+			WHERE o.shop_id = $1
+			ORDER BY o.created_at DESC
+			LIMIT 5
+		`
+		recentRows, err := db.Query(recentQuery, shopID)
+		if err != nil {
+			log.Printf("⚠️ Recent orders query error: %v", err)
+		} else {
+			defer recentRows.Close()
+			for recentRows.Next() {
+				var item models.RecentOrderItem
+				var createdAt time.Time
+				if err := recentRows.Scan(
+					&item.ID, &item.ClientName, &item.ProductName,
+					&item.ProductImage, &item.TotalAmount, &item.Status, &createdAt,
+				); err != nil {
+					continue
+				}
+				item.CreatedAt = createdAt.Format("02.01.2006 15:04")
+				item.TimeAgo = timeAgo(createdAt)
+				stats.RecentOrders = append(stats.RecentOrders, item)
+			}
+		}
+
+		if stats.RecentOrders == nil {
+			stats.RecentOrders = []models.RecentOrderItem{}
+		}
+
+		log.Printf("✅ Dashboard stats loaded for shop: %s", shopID)
+
+		writeJSON(w, http.StatusOK, models.DashboardStatsResponse{
+			Success: true,
+			Stats:   stats,
+		})
+	}
+}
+
+// timeAgo - vaqtni "... oldin" formatida qaytaradi
+func timeAgo(t time.Time) string {
+	diff := time.Since(t)
+
+	switch {
+	case diff < time.Minute:
+		return "Hozir"
+	case diff < time.Hour:
+		mins := int(diff.Minutes())
+		return fmt.Sprintf("%d daqiqa oldin", mins)
+	case diff < 24*time.Hour:
+		hours := int(diff.Hours())
+		return fmt.Sprintf("%d soat oldin", hours)
+	case diff < 48*time.Hour:
+		return "Kecha"
+	case diff < 7*24*time.Hour:
+		days := int(diff.Hours() / 24)
+		return fmt.Sprintf("%d kun oldin", days)
+	default:
+		return t.Format("02.01.2006")
+	}
+}

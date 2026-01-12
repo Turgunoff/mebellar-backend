@@ -191,6 +191,12 @@ func main() {
 	http.HandleFunc("/api/seller/orders/", corsMiddleware(handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db))))
 
 	// ============================================
+	// SELLER DASHBOARD ENDPOINTS
+	// ============================================
+	// Dashboard statistikasi (Aggregation)
+	http.HandleFunc("/api/seller/dashboard/stats", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetDashboardStats(db))))
+
+	// ============================================
 	// SELLER ANALYTICS ENDPOINTS
 	// ============================================
 	// Bekor qilish statistikasi (Cancellation Analytics)
@@ -265,6 +271,9 @@ func main() {
 	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
 	fmt.Println("   GET  /api/seller/orders/stats  - Buyurtmalar statistikasi")
 	fmt.Println("   PUT  /api/seller/orders/{id}/status?status=confirmed - Status o'zgartirish")
+	fmt.Println("")
+	fmt.Println("🏠 Seller Dashboard (JWT himoyalangan):")
+	fmt.Println("   GET /api/seller/dashboard/stats - Dashboard statistikasi")
 	fmt.Println("")
 	fmt.Println("📊 Seller Analytics (JWT himoyalangan):")
 	fmt.Println("   GET /api/seller/analytics/cancellations - Bekor qilish tahlili")

@@ -150,3 +150,36 @@ type CancellationStatsResponse struct {
 	Message string            `json:"message,omitempty"`
 	Stats   CancellationStats `json:"stats"`
 }
+
+// RecentOrderItem - so'nggi buyurtma elementi (dashboard uchun)
+type RecentOrderItem struct {
+	ID           string  `json:"id"`
+	ClientName   string  `json:"client_name"`
+	ProductName  string  `json:"product_name"`
+	ProductImage string  `json:"product_image"`
+	TotalAmount  float64 `json:"total_amount"`
+	Status       string  `json:"status"`
+	CreatedAt    string  `json:"created_at"`
+	TimeAgo      string  `json:"time_ago"`
+}
+
+// DashboardStats - bosh sahifa statistikasi
+type DashboardStats struct {
+	ShopRating         float64           `json:"shop_rating"`
+	TotalRevenue       float64           `json:"total_revenue"`
+	RevenueGrowth      float64           `json:"revenue_growth"`
+	ChartData          []float64         `json:"chart_data"`
+	ChartLabels        []string          `json:"chart_labels"`
+	ActiveProducts     int               `json:"active_products"`
+	TotalOrdersCount   int               `json:"total_orders_count"`
+	TodaySalesCount    int               `json:"today_sales_count"`
+	PendingOrdersCount int               `json:"pending_orders_count"`
+	RecentOrders       []RecentOrderItem `json:"recent_orders"`
+}
+
+// DashboardStatsResponse - dashboard statistikasi javobi
+type DashboardStatsResponse struct {
+	Success bool           `json:"success"`
+	Message string         `json:"message,omitempty"`
+	Stats   DashboardStats `json:"stats"`
+}
