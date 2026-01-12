@@ -752,3 +752,66 @@ func SellerOrdersHandler(db *sql.DB) http.HandlerFunc {
 		}
 	}
 }
+
+// ============================================
+// GET CANCELLATION REASONS
+// ============================================
+
+// GetCancellationReasons godoc
+// @Summary      Bekor qilish sabablarini olish
+// @Description  Dinamik bekor qilish sabablari ro'yxati
+// @Tags         common
+// @Produce      json
+// @Success      200  {object}  models.CancellationReasonsResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /common/cancellation-reasons [get]
+func GetCancellationReasons(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		query := `
+			SELECT reason_text 
+			FROM cancellation_reasons 
+			WHERE is_active = true 
+			ORDER BY sort_order ASC
+		`
+
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("❌ Cancellation reasons query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Sabablarni olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		var reasons []string
+		for rows.Next() {
+			var reason string
+			if err := rows.Scan(&reason); err != nil {
+				continue
+			}
+			reasons = append(reasons, reason)
+		}
+
+		// Return empty array instead of null
+		if reasons == nil {
+			reasons = []string{}
+		}
+
+		log.Printf("✅ %d ta bekor qilish sababi qaytarildi", len(reasons))
+
+		writeJSON(w, http.StatusOK, models.CancellationReasonsResponse{
+			Success: true,
+			Reasons: reasons,
+		})
+	}
+}

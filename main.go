@@ -191,6 +191,12 @@ func main() {
 	http.HandleFunc("/api/seller/orders/", corsMiddleware(handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db))))
 
 	// ============================================
+	// COMMON ENDPOINTS (Umumiy)
+	// ============================================
+	// Bekor qilish sabablari (dinamik)
+	http.HandleFunc("/api/common/cancellation-reasons", corsMiddleware(handlers.GetCancellationReasons(db)))
+
+	// ============================================
 	// DEBUG ENDPOINTS
 	// ============================================
 	// Test buyurtmalarini yaratish
@@ -253,6 +259,9 @@ func main() {
 	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
 	fmt.Println("   GET  /api/seller/orders/stats  - Buyurtmalar statistikasi")
 	fmt.Println("   PUT  /api/seller/orders/{id}/status?status=confirmed - Status o'zgartirish")
+	fmt.Println("")
+	fmt.Println("📋 Common endpoints (Ommaviy):")
+	fmt.Println("   GET /api/common/cancellation-reasons - Bekor qilish sabablari")
 	fmt.Println("")
 	fmt.Println("🔧 Debug endpoints (JWT himoyalangan):")
 	fmt.Println("   POST /api/debug/seed-orders?count=10 - Test buyurtmalar yaratish")

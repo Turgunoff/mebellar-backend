@@ -116,3 +116,17 @@ func GetStatusLabel(status string) string {
 		return status
 	}
 }
+
+// CancellationReason - bekor qilish sababi
+// @Description Dinamik bekor qilish sabablari
+type CancellationReason struct {
+	ID         int    `json:"id"`
+	ReasonText string `json:"reason_text"`
+	SortOrder  int    `json:"sort_order"`
+}
+
+// CancellationReasonsResponse - sabablar ro'yxati javobi
+type CancellationReasonsResponse struct {
+	Success bool     `json:"success"`
+	Reasons []string `json:"reasons"`
+}
