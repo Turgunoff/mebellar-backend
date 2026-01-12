@@ -2,11 +2,20 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"mebellar-backend/models"
+
+	"github.com/google/uuid"
 )
 
 // GetProducts godoc
@@ -325,6 +334,270 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 			Count:    len(products),
 		})
 	}
+}
+
+// CreateProduct godoc
+// @Summary      Yangi mahsulot yaratish (Seller)
+// @Description  Seller uchun yangi mahsulot qo'shish. Multipart form-data kerak.
+// @Tags         seller-products
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Param        name formData string true "Mahsulot nomi"
+// @Param        description formData string false "Tavsif"
+// @Param        category_id formData string false "Kategoriya ID"
+// @Param        price formData number true "Narx"
+// @Param        discount_price formData number false "Chegirma narxi"
+// @Param        is_new formData bool false "Yangi mahsulot belgisi"
+// @Param        is_popular formData bool false "Mashhur mahsulot belgisi"
+// @Param        specs formData string false "Xususiyatlar (JSON)"
+// @Param        variants formData string false "Variantlar (JSON)"
+// @Param        delivery_settings formData string false "Yetkazib berish sozlamalari (JSON)"
+// @Param        images formData file false "Mahsulot rasmlari"
+// @Success      201  {object}  models.ProductResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/products [post]
+func CreateProduct(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Get shop ID from header
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		// Parse multipart form (32MB max)
+		err := r.ParseMultipartForm(32 << 20)
+		if err != nil {
+			log.Printf("ParseMultipartForm xatosi: %v", err)
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Form ma'lumotlarini o'qishda xatolik",
+			})
+			return
+		}
+
+		// Get form values
+		name := r.FormValue("name")
+		description := r.FormValue("description")
+		categoryID := r.FormValue("category_id")
+		priceStr := r.FormValue("price")
+		discountPriceStr := r.FormValue("discount_price")
+		isNewStr := r.FormValue("is_new")
+		isPopularStr := r.FormValue("is_popular")
+		specsJSON := r.FormValue("specs")
+		variantsJSON := r.FormValue("variants")
+		deliverySettingsJSON := r.FormValue("delivery_settings")
+
+		// Validate required fields
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot nomi kerak",
+			})
+			return
+		}
+
+		price, err := strconv.ParseFloat(priceStr, 64)
+		if err != nil || price <= 0 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Narx noto'g'ri",
+			})
+			return
+		}
+
+		// Parse optional fields
+		var discountPrice *float64
+		if discountPriceStr != "" {
+			dp, err := strconv.ParseFloat(discountPriceStr, 64)
+			if err == nil && dp > 0 {
+				discountPrice = &dp
+			}
+		}
+
+		isNew := isNewStr == "true"
+		isPopular := isPopularStr == "true"
+
+		// Parse JSON fields
+		var specs models.JSONB
+		if specsJSON != "" {
+			if err := json.Unmarshal([]byte(specsJSON), &specs); err != nil {
+				log.Printf("Specs JSON parse xatosi: %v", err)
+				specs = models.JSONB{}
+			}
+		}
+
+		var variants models.JSONBArray
+		if variantsJSON != "" {
+			if err := json.Unmarshal([]byte(variantsJSON), &variants); err != nil {
+				log.Printf("Variants JSON parse xatosi: %v", err)
+				variants = models.JSONBArray{}
+			}
+		}
+
+		var deliverySettings models.DeliverySettings
+		if deliverySettingsJSON != "" {
+			if err := json.Unmarshal([]byte(deliverySettingsJSON), &deliverySettings); err != nil {
+				log.Printf("DeliverySettings JSON parse xatosi: %v", err)
+				deliverySettings = models.DeliverySettings{
+					Default: models.RegionSettings{DeliveryDays: "3-5"},
+				}
+			}
+		}
+
+		// Handle image uploads
+		var imageURLs []string
+		files := r.MultipartForm.File["images"]
+		if len(files) > 0 {
+			// Create uploads directory if not exists
+			uploadDir := "./uploads/products"
+			if err := os.MkdirAll(uploadDir, 0755); err != nil {
+				log.Printf("Upload dir yaratishda xatolik: %v", err)
+			}
+
+			for i, fileHeader := range files {
+				if i >= 5 { // Max 5 images
+					break
+				}
+
+				file, err := fileHeader.Open()
+				if err != nil {
+					log.Printf("File ochishda xatolik: %v", err)
+					continue
+				}
+				defer file.Close()
+
+				// Generate unique filename
+				ext := filepath.Ext(fileHeader.Filename)
+				if ext == "" {
+					ext = ".jpg"
+				}
+				filename := fmt.Sprintf("%s_%d%s", uuid.New().String(), i, ext)
+				filePath := filepath.Join(uploadDir, filename)
+
+				// Save file
+				dst, err := os.Create(filePath)
+				if err != nil {
+					log.Printf("File yaratishda xatolik: %v", err)
+					continue
+				}
+				defer dst.Close()
+
+				if _, err := io.Copy(dst, file); err != nil {
+					log.Printf("File saqlashda xatolik: %v", err)
+					continue
+				}
+
+				// Add URL to list (adjust based on your server config)
+				imageURL := fmt.Sprintf("/uploads/products/%s", filename)
+				imageURLs = append(imageURLs, imageURL)
+			}
+		}
+
+		// Generate product ID
+		productID := uuid.New().String()
+
+		// Insert into database
+		query := `
+			INSERT INTO products (
+				id, shop_id, category_id, name, description, price, discount_price,
+				images, specs, variants, delivery_settings,
+				is_new, is_popular, is_active, created_at
+			) VALUES (
+				$1, $2, $3, $4, $5, $6, $7,
+				$8, $9, $10, $11,
+				$12, $13, true, $14
+			)
+			RETURNING id
+		`
+
+		var categoryIDPtr *string
+		if categoryID != "" {
+			categoryIDPtr = &categoryID
+		}
+
+		specsValue, _ := specs.Value()
+		variantsValue, _ := variants.Value()
+		deliveryValue, _ := deliverySettings.Value()
+
+		var insertedID string
+		err = db.QueryRow(
+			query,
+			productID,
+			shopID,
+			categoryIDPtr,
+			name,
+			description,
+			price,
+			discountPrice,
+			fmt.Sprintf("{%s}", strings.Join(quoteStrings(imageURLs), ",")),
+			specsValue,
+			variantsValue,
+			deliveryValue,
+			isNew,
+			isPopular,
+			time.Now(),
+		).Scan(&insertedID)
+
+		if err != nil {
+			log.Printf("❌ Product insert xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot yaratishda xatolik: " + err.Error(),
+			})
+			return
+		}
+
+		log.Printf("✅ Mahsulot yaratildi: %s - %s", insertedID, name)
+
+		// Return created product
+		product := models.Product{
+			ID:               insertedID,
+			CategoryID:       categoryIDPtr,
+			Name:             name,
+			Description:      description,
+			Price:            price,
+			DiscountPrice:    discountPrice,
+			Images:           imageURLs,
+			Specs:            specs,
+			Variants:         variants,
+			DeliverySettings: deliverySettings,
+			IsNew:            isNew,
+			IsPopular:        isPopular,
+			IsActive:         true,
+			CreatedAt:        time.Now(),
+		}
+
+		writeJSON(w, http.StatusCreated, models.ProductResponse{
+			Success: true,
+			Message: "Mahsulot muvaffaqiyatli yaratildi",
+			Product: &product,
+		})
+	}
+}
+
+// quoteStrings wraps each string in quotes for PostgreSQL array
+func quoteStrings(strs []string) []string {
+	result := make([]string, len(strs))
+	for i, s := range strs {
+		result[i] = fmt.Sprintf("\"%s\"", s)
+	}
+	return result
 }
 
 // writeJSON is defined in auth.go - reusing it here

@@ -66,26 +66,85 @@ func (j *JSONBArray) Scan(value interface{}) error {
 }
 
 // ============================================
+// DELIVERY SETTINGS - Regional delivery pricing
+// ============================================
+
+// RegionSettings - bir hudud uchun yetkazib berish sozlamalari
+// @Description Regional delivery settings
+type RegionSettings struct {
+	RegionID          string  `json:"region_id,omitempty" example:"tashkent_city"`
+	RegionName        string  `json:"region_name,omitempty" example:"Toshkent sh."`
+	DeliveryPrice     float64 `json:"delivery_price" example:"50000"`
+	DeliveryDays      string  `json:"delivery_days" example:"1-2"`
+	HasInstallation   bool    `json:"has_installation" example:"true"`
+	InstallationPrice float64 `json:"installation_price" example:"100000"`
+	Comment           string  `json:"comment,omitempty" example:"Shahar ichida bepul"`
+}
+
+// DeliverySettings - yetkazib berish sozlamalari (default + overrides)
+// @Description Delivery settings with default and regional overrides
+type DeliverySettings struct {
+	Default   RegionSettings   `json:"default"`
+	Overrides []RegionSettings `json:"overrides,omitempty"`
+}
+
+// Value - database ga yozish uchun
+func (d DeliverySettings) Value() (driver.Value, error) {
+	return json.Marshal(d)
+}
+
+// Scan - database dan o'qish uchun
+func (d *DeliverySettings) Scan(value interface{}) error {
+	if value == nil {
+		*d = DeliverySettings{
+			Default: RegionSettings{
+				DeliveryDays: "3-5",
+			},
+			Overrides: []RegionSettings{},
+		}
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for DeliverySettings")
+	}
+
+	return json.Unmarshal(bytes, d)
+}
+
+// GetRegionPrice - ma'lum hudud uchun narxni olish
+func (d *DeliverySettings) GetRegionPrice(regionID string) RegionSettings {
+	for _, override := range d.Overrides {
+		if override.RegionID == regionID {
+			return override
+		}
+	}
+	return d.Default
+}
+
+// ============================================
 // PRODUCT MODEL
 // ============================================
 
 // Product - mahsulot modeli (MVP uchun moslashuvchan arxitektura)
 // @Description Mahsulot ma'lumotlari
 type Product struct {
-	ID            string         `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	CategoryID    *string        `json:"category_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Name          string         `json:"name" example:"Premium Divan"`
-	Description   string         `json:"description" example:"Zamonaviy dizayndagi divan"`
-	Price         float64        `json:"price" example:"5500000"`
-	DiscountPrice *float64       `json:"discount_price,omitempty" example:"4400000"`
-	Images        pq.StringArray `json:"images" swaggertype:"array,string" example:"https://example.com/img1.jpg,https://example.com/img2.jpg"`
-	Specs         JSONB          `json:"specs,omitempty" swaggertype:"object"`
-	Variants      JSONBArray     `json:"variants,omitempty" swaggertype:"array,object"`
-	Rating        float64        `json:"rating" example:"4.8"`
-	IsNew         bool           `json:"is_new" example:"true"`
-	IsPopular     bool           `json:"is_popular" example:"true"`
-	IsActive      bool           `json:"is_active" example:"true"`
-	CreatedAt     time.Time      `json:"created_at"`
+	ID               string           `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	CategoryID       *string          `json:"category_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Name             string           `json:"name" example:"Premium Divan"`
+	Description      string           `json:"description" example:"Zamonaviy dizayndagi divan"`
+	Price            float64          `json:"price" example:"5500000"`
+	DiscountPrice    *float64         `json:"discount_price,omitempty" example:"4400000"`
+	Images           pq.StringArray   `json:"images" swaggertype:"array,string" example:"https://example.com/img1.jpg,https://example.com/img2.jpg"`
+	Specs            JSONB            `json:"specs,omitempty" swaggertype:"object"`
+	Variants         JSONBArray       `json:"variants,omitempty" swaggertype:"array,object"`
+	DeliverySettings DeliverySettings `json:"delivery_settings,omitempty"`
+	Rating           float64          `json:"rating" example:"4.8"`
+	IsNew            bool             `json:"is_new" example:"true"`
+	IsPopular        bool             `json:"is_popular" example:"true"`
+	IsActive         bool             `json:"is_active" example:"true"`
+	CreatedAt        time.Time        `json:"created_at"`
 }
 
 // DiscountPercent - chegirma foizini hisoblash

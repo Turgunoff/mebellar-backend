@@ -135,6 +135,9 @@ func main() {
 	http.HandleFunc("/api/categories", corsMiddleware(handlers.GetCategories(db)))
 	http.HandleFunc("/api/categories/", corsMiddleware(handlers.GetCategoryByID(db))) // /api/categories/{id}
 
+	// Hududlar (Viloyatlar)
+	http.HandleFunc("/api/regions", corsMiddleware(handlers.GetRegions(db)))
+
 	// Mahsulotlar
 	http.HandleFunc("/api/products", corsMiddleware(handlers.GetProducts(db)))
 	http.HandleFunc("/api/products/new", corsMiddleware(handlers.GetNewArrivals(db)))
@@ -170,6 +173,9 @@ func main() {
 	http.HandleFunc("/api/seller/shops", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopsHandler(db))))
 	// Do'kon bo'yicha operatsiyalar (GET, PUT, DELETE)
 	http.HandleFunc("/api/seller/shops/", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db))))
+
+	// Seller mahsulotlari
+	http.HandleFunc("/api/seller/products", corsMiddleware(handlers.JWTMiddleware(db, handlers.CreateProduct(db))))
 
 	// Ommaviy do'kon sahifasi (slug bo'yicha)
 	http.HandleFunc("/api/shops/", corsMiddleware(handlers.GetPublicShopBySlug(db)))
