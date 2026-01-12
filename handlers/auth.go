@@ -16,11 +16,25 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// OTP storage - telefon raqami -> kod (MVP uchun oddiy global o'zgaruvchi)
-var otpStore = make(map[string]string)
+// OTP amal qilish muddati (soniyalarda)
+const OTPExpirationSeconds = 60
+
+// OTPEntry - OTP ma'lumotlari (kod + yaratilgan vaqt)
+type OTPEntry struct {
+	Code      string
+	CreatedAt time.Time
+}
+
+// OTP storage - telefon raqami -> OTP entry
+var otpStore = make(map[string]OTPEntry)
 
 // Verified phones - OTP tasdiqlangan telefonlar
 var verifiedPhones = make(map[string]bool)
+
+// isOTPValid - OTP hali amal qilayaptimi
+func isOTPValid(entry OTPEntry) bool {
+	return time.Since(entry.CreatedAt).Seconds() <= OTPExpirationSeconds
+}
 
 // JWT secret key - .env dan yuklanadi
 var jwtSecretKey = []byte("mebellar-super-secret-key-2024")
@@ -143,8 +157,11 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 		// 5 xonali OTP yaratish
 		code := generateOTP()
 
-		// OTP'ni saqlash
-		otpStore[req.Phone] = code
+		// OTP'ni saqlash (60 soniya amal qiladi)
+		otpStore[req.Phone] = OTPEntry{
+			Code:      code,
+			CreatedAt: time.Now(),
+		}
 
 		// SMS yuborish
 		if smsService != nil {
@@ -200,7 +217,7 @@ func VerifyOTP(db *sql.DB) http.HandlerFunc {
 		}
 
 		// OTP tekshirish
-		storedCode, exists := otpStore[req.Phone]
+		otpEntry, exists := otpStore[req.Phone]
 		if !exists {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
@@ -209,7 +226,17 @@ func VerifyOTP(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		if storedCode != req.Code {
+		// OTP muddati tekshirish (60 soniya)
+		if !isOTPValid(otpEntry) {
+			delete(otpStore, req.Phone) // Eskirgan OTP'ni o'chirish
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Tasdiqlash kodi eskirgan. Iltimos, yangi kod so'rang",
+			})
+			return
+		}
+
+		if otpEntry.Code != req.Code {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Noto'g'ri tasdiqlash kodi",
@@ -518,8 +545,11 @@ func ForgotPassword(db *sql.DB) http.HandlerFunc {
 		// 5 xonali OTP yaratish
 		code := generateOTP()
 
-		// OTP'ni saqlash
-		otpStore[req.Phone] = code
+		// OTP'ni saqlash (60 soniya amal qiladi)
+		otpStore[req.Phone] = OTPEntry{
+			Code:      code,
+			CreatedAt: time.Now(),
+		}
 
 		// MOCK SMS - konsolga chiqarish (logda ham ko'rinadi)
 		log.Printf("📱 [PASSWORD RESET OTP] to %s: %s", req.Phone, code)
@@ -581,7 +611,7 @@ func ResetPassword(db *sql.DB) http.HandlerFunc {
 		}
 
 		// OTP tekshirish
-		storedCode, exists := otpStore[req.Phone]
+		otpEntry, exists := otpStore[req.Phone]
 		if !exists {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
@@ -590,7 +620,17 @@ func ResetPassword(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		if storedCode != req.Code {
+		// OTP muddati tekshirish (60 soniya)
+		if !isOTPValid(otpEntry) {
+			delete(otpStore, req.Phone) // Eskirgan OTP'ni o'chirish
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Tasdiqlash kodi eskirgan. Iltimos, yangi kod so'rang",
+			})
+			return
+		}
+
+		if otpEntry.Code != req.Code {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Noto'g'ri tasdiqlash kodi",
