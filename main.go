@@ -191,6 +191,12 @@ func main() {
 	http.HandleFunc("/api/seller/orders/", corsMiddleware(handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db))))
 
 	// ============================================
+	// SELLER ANALYTICS ENDPOINTS
+	// ============================================
+	// Bekor qilish statistikasi (Cancellation Analytics)
+	http.HandleFunc("/api/seller/analytics/cancellations", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetCancellationStats(db))))
+
+	// ============================================
 	// COMMON ENDPOINTS (Umumiy)
 	// ============================================
 	// Bekor qilish sabablari (dinamik)
@@ -259,6 +265,9 @@ func main() {
 	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
 	fmt.Println("   GET  /api/seller/orders/stats  - Buyurtmalar statistikasi")
 	fmt.Println("   PUT  /api/seller/orders/{id}/status?status=confirmed - Status o'zgartirish")
+	fmt.Println("")
+	fmt.Println("📊 Seller Analytics (JWT himoyalangan):")
+	fmt.Println("   GET /api/seller/analytics/cancellations - Bekor qilish tahlili")
 	fmt.Println("")
 	fmt.Println("📋 Common endpoints (Ommaviy):")
 	fmt.Println("   GET /api/common/cancellation-reasons - Bekor qilish sabablari")

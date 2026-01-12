@@ -796,3 +796,102 @@ func GetCancellationReasons(db *sql.DB) http.HandlerFunc {
 		})
 	}
 }
+
+// ============================================
+// GET CANCELLATION STATS (Analytics)
+// ============================================
+
+// GetCancellationStats godoc
+// @Summary      Bekor qilish statistikasi
+// @Description  Bekor qilingan buyurtmalarning sabablari bo'yicha tahlil
+// @Tags         seller-analytics
+// @Produce      json
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Success      200  {object}  models.CancellationStatsResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/analytics/cancellations [get]
+func GetCancellationStats(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		// Get total cancelled orders count
+		var totalCancelled int
+		err := db.QueryRow(`
+			SELECT COUNT(*) FROM orders 
+			WHERE shop_id = $1 AND status = 'cancelled'
+		`, shopID).Scan(&totalCancelled)
+		if err != nil {
+			log.Printf("❌ Cancellation total count xatosi: %v", err)
+			totalCancelled = 0
+		}
+
+		// Get breakdown by reason
+		query := `
+			SELECT 
+				COALESCE(cancellation_reason, 'Noma''lum') as reason,
+				COUNT(*) as count
+			FROM orders 
+			WHERE shop_id = $1 AND status = 'cancelled'
+			GROUP BY cancellation_reason
+			ORDER BY count DESC
+		`
+
+		rows, err := db.Query(query, shopID)
+		if err != nil {
+			log.Printf("❌ Cancellation stats query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Statistikani olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		var breakdown []models.CancellationBreakdown
+		for rows.Next() {
+			var b models.CancellationBreakdown
+			if err := rows.Scan(&b.Reason, &b.Count); err != nil {
+				continue
+			}
+			// Calculate percentage
+			if totalCancelled > 0 {
+				b.Percentage = float64(b.Count) / float64(totalCancelled) * 100
+				// Round to 1 decimal place
+				b.Percentage = float64(int(b.Percentage*10)) / 10
+			}
+			breakdown = append(breakdown, b)
+		}
+
+		// Return empty array instead of null
+		if breakdown == nil {
+			breakdown = []models.CancellationBreakdown{}
+		}
+
+		log.Printf("✅ Cancellation stats: %d ta bekor qilingan, %d ta sabab", totalCancelled, len(breakdown))
+
+		writeJSON(w, http.StatusOK, models.CancellationStatsResponse{
+			Success: true,
+			Stats: models.CancellationStats{
+				TotalCancelled: totalCancelled,
+				Breakdown:      breakdown,
+			},
+		})
+	}
+}

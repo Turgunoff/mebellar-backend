@@ -130,3 +130,23 @@ type CancellationReasonsResponse struct {
 	Success bool     `json:"success"`
 	Reasons []string `json:"reasons"`
 }
+
+// CancellationBreakdown - bekor qilish sababi statistikasi
+type CancellationBreakdown struct {
+	Reason     string  `json:"reason"`
+	Count      int     `json:"count"`
+	Percentage float64 `json:"percentage"`
+}
+
+// CancellationStats - bekor qilish statistikasi
+type CancellationStats struct {
+	TotalCancelled int                     `json:"total_cancelled"`
+	Breakdown      []CancellationBreakdown `json:"breakdown"`
+}
+
+// CancellationStatsResponse - bekor qilish statistikasi javobi
+type CancellationStatsResponse struct {
+	Success bool              `json:"success"`
+	Message string            `json:"message,omitempty"`
+	Stats   CancellationStats `json:"stats"`
+}
