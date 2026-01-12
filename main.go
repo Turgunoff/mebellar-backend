@@ -180,6 +180,22 @@ func main() {
 	// Seller mahsulot item (PUT: yangilash, DELETE: o'chirish)
 	http.HandleFunc("/api/seller/products/", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db))))
 
+	// ============================================
+	// SELLER ORDERS ENDPOINTS
+	// ============================================
+	// Buyurtmalar ro'yxati
+	http.HandleFunc("/api/seller/orders", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerOrdersHandler(db))))
+	// Buyurtmalar statistikasi
+	http.HandleFunc("/api/seller/orders/stats", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetOrderStats(db))))
+	// Buyurtma statusini o'zgartirish
+	http.HandleFunc("/api/seller/orders/", corsMiddleware(handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db))))
+
+	// ============================================
+	// DEBUG ENDPOINTS
+	// ============================================
+	// Test buyurtmalarini yaratish
+	http.HandleFunc("/api/debug/seed-orders", corsMiddleware(handlers.JWTMiddleware(db, handlers.SeedOrders(db))))
+
 	// Ommaviy do'kon sahifasi (slug bo'yicha)
 	http.HandleFunc("/api/shops/", corsMiddleware(handlers.GetPublicShopBySlug(db)))
 
@@ -232,6 +248,14 @@ func main() {
 	fmt.Println("   GET    /api/seller/shops/{id} - Do'kon ma'lumotlari")
 	fmt.Println("   PUT    /api/seller/shops/{id} - Do'konni yangilash")
 	fmt.Println("   DELETE /api/seller/shops/{id} - Do'konni o'chirish")
+	fmt.Println("")
+	fmt.Println("📦 Seller Orders (JWT himoyalangan):")
+	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
+	fmt.Println("   GET  /api/seller/orders/stats  - Buyurtmalar statistikasi")
+	fmt.Println("   PUT  /api/seller/orders/{id}/status?status=confirmed - Status o'zgartirish")
+	fmt.Println("")
+	fmt.Println("🔧 Debug endpoints (JWT himoyalangan):")
+	fmt.Println("   POST /api/debug/seed-orders?count=10 - Test buyurtmalar yaratish")
 	fmt.Println("")
 	fmt.Println("🌐 Public Shop (Ommaviy):")
 	fmt.Println("   GET /api/shops/{slug} - Do'kon sahifasi")
