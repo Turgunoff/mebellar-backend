@@ -163,6 +163,17 @@ func main() {
 	// Sotuvchi bo'lish (JWT himoyalangan)
 	http.HandleFunc("/api/user/become-seller", corsMiddleware(handlers.JWTMiddleware(db, handlers.BecomeSeller(db))))
 
+	// ============================================
+	// SELLER SHOP ENDPOINTS (Multi-Shop Architecture)
+	// ============================================
+	// Do'konlar ro'yxati va yaratish
+	http.HandleFunc("/api/seller/shops", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopsHandler(db))))
+	// Do'kon bo'yicha operatsiyalar (GET, PUT, DELETE)
+	http.HandleFunc("/api/seller/shops/", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db))))
+
+	// Ommaviy do'kon sahifasi (slug bo'yicha)
+	http.HandleFunc("/api/shops/", corsMiddleware(handlers.GetPublicShopBySlug(db)))
+
 	// 3. Static files - uploads papkasini serve qilish
 	fs := http.FileServer(http.Dir("uploads"))
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
@@ -206,6 +217,16 @@ func main() {
 	fmt.Println("🏪 Sotuvchi bo'lish (JWT himoyalangan):")
 	fmt.Println("   POST /api/user/become-seller")
 	fmt.Println("")
+	fmt.Println("🏬 Seller Shops (Multi-Shop, JWT himoyalangan):")
+	fmt.Println("   GET    /api/seller/shops      - Mening do'konlarim")
+	fmt.Println("   POST   /api/seller/shops      - Yangi do'kon yaratish")
+	fmt.Println("   GET    /api/seller/shops/{id} - Do'kon ma'lumotlari")
+	fmt.Println("   PUT    /api/seller/shops/{id} - Do'konni yangilash")
+	fmt.Println("   DELETE /api/seller/shops/{id} - Do'konni o'chirish")
+	fmt.Println("")
+	fmt.Println("🌐 Public Shop (Ommaviy):")
+	fmt.Println("   GET /api/shops/{slug} - Do'kon sahifasi")
+	fmt.Println("")
 	fmt.Println("📁 Static files: /uploads/*")
 	fmt.Printf("📚 Swagger UI: http://localhost:%s/swagger/index.html\n", serverPort)
 	fmt.Println("🔧 CORS enabled for all origins")
@@ -236,6 +257,62 @@ func createUsersTable(db *sql.DB) {
 	// Mavjud jadvalga yangi ustunlarni qo'shish (agar yo'q bo'lsa)
 	addColumnIfNotExists(db, "users", "email", "VARCHAR(255) UNIQUE")
 	addColumnIfNotExists(db, "users", "avatar_url", "VARCHAR(500)")
+
+	// Seller Profiles jadvalini yaratish
+	createSellerProfilesTable(db)
+}
+
+// createSellerProfilesTable - seller_profiles jadvalini yaratadi (Multi-Shop)
+func createSellerProfilesTable(db *sql.DB) {
+	query := `
+	CREATE TABLE IF NOT EXISTS seller_profiles (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- One User -> Many Shops
+		
+		-- Biznes ma'lumotlari
+		shop_name VARCHAR(255) NOT NULL,
+		slug VARCHAR(255) UNIQUE,
+		description TEXT,
+		logo_url VARCHAR(500),
+		banner_url VARCHAR(500),
+		
+		-- Yuridik va moliyaviy ma'lumotlar
+		legal_name VARCHAR(255),
+		tax_id VARCHAR(50),
+		bank_account VARCHAR(50),
+		bank_name VARCHAR(255),
+		
+		-- Aloqa va joylashuv
+		support_phone VARCHAR(20),
+		address VARCHAR(500),
+		latitude FLOAT8,
+		longitude FLOAT8,
+		
+		-- JSONB maydonlari
+		social_links JSONB DEFAULT '{}',
+		working_hours JSONB DEFAULT '{}',
+		
+		-- Status va reyting
+		is_verified BOOLEAN DEFAULT FALSE,
+		rating FLOAT DEFAULT 0,
+		
+		-- Vaqt belgilari
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW()
+	);
+	`
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Printf("Seller profiles jadvalini yaratishda xatolik: %v", err)
+	} else {
+		fmt.Println("✅ Seller Profiles jadvali tayyor!")
+	}
+
+	// Indekslar
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_user_id ON seller_profiles(user_id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_shop_name ON seller_profiles(shop_name)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_slug ON seller_profiles(slug)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_is_verified ON seller_profiles(is_verified)`)
 }
 
 // addColumnIfNotExists - mavjud jadvalga ustun qo'shadi (agar yo'q bo'lsa)
