@@ -10,6 +10,156 @@ import (
 )
 
 // ============================================
+// SELLER PROFILE ENDPOINT (Aggregated)
+// ============================================
+
+// SellerProfileData - Seller profile ma'lumotlari (user + shop stats)
+type SellerProfileData struct {
+	User *UserProfileData `json:"user"`
+	Shop *ShopStatsData   `json:"shop"`
+}
+
+// UserProfileData - Foydalanuvchi ma'lumotlari
+type UserProfileData struct {
+	ID        string `json:"id"`
+	FullName  string `json:"full_name"`
+	Phone     string `json:"phone"`
+	Email     string `json:"email,omitempty"`
+	AvatarURL string `json:"avatar_url,omitempty"`
+	Role      string `json:"role"`
+}
+
+// ShopStatsData - Do'kon statistikasi
+type ShopStatsData struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	LogoURL       string  `json:"logo_url,omitempty"`
+	Rating        float64 `json:"rating"`
+	ProductsCount int     `json:"products_count"`
+	OrdersCount   int     `json:"orders_count"`
+	IsVerified    bool    `json:"is_verified"`
+}
+
+// GetSellerProfile godoc
+// @Summary      Sotuvchi profili (aggregated)
+// @Description  Foydalanuvchi ma'lumotlari va tanlangan do'kon statistikasini qaytaradi
+// @Tags         seller
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        X-Shop-ID header string true "Joriy do'kon ID"
+// @Success      200  {object}  map[string]interface{}
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /seller/profile [get]
+func GetSellerProfile(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Avtorizatsiya talab qilinadi",
+			})
+			return
+		}
+
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kiritilishi shart",
+			})
+			return
+		}
+
+		// 1. Foydalanuvchi ma'lumotlarini olish
+		var userData UserProfileData
+		err := db.QueryRow(`
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), COALESCE(role, 'seller')
+			FROM users WHERE id = $1
+		`, userID).Scan(&userData.ID, &userData.FullName, &userData.Phone, &userData.Email, &userData.AvatarURL, &userData.Role)
+
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("GetSellerProfile user query error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi ma'lumotlarini olishda xatolik",
+			})
+			return
+		}
+
+		// 2. Do'kon ma'lumotlarini olish
+		var shopData ShopStatsData
+		err = db.QueryRow(`
+			SELECT id, shop_name, COALESCE(logo_url, ''), rating, is_verified
+			FROM seller_profiles 
+			WHERE id = $1 AND user_id = $2
+		`, shopID, userID).Scan(&shopData.ID, &shopData.Name, &shopData.LogoURL, &shopData.Rating, &shopData.IsVerified)
+
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon topilmadi yoki sizga tegishli emas",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("GetSellerProfile shop query error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon ma'lumotlarini olishda xatolik",
+			})
+			return
+		}
+
+		// 3. Aktiv mahsulotlar sonini olish
+		err = db.QueryRow(`
+			SELECT COUNT(*) FROM products 
+			WHERE shop_id = $1 AND is_active = true
+		`, shopID).Scan(&shopData.ProductsCount)
+		if err != nil {
+			log.Printf("GetSellerProfile products count error: %v", err)
+			shopData.ProductsCount = 0
+		}
+
+		// 4. Bajarilgan buyurtmalar sonini olish (completed)
+		err = db.QueryRow(`
+			SELECT COUNT(*) FROM orders 
+			WHERE shop_id = $1 AND status = 'completed'
+		`, shopID).Scan(&shopData.OrdersCount)
+		if err != nil {
+			log.Printf("GetSellerProfile orders count error: %v", err)
+			shopData.OrdersCount = 0
+		}
+
+		log.Printf("✅ Seller profile fetched: user=%s, shop=%s, products=%d, orders=%d",
+			userData.FullName, shopData.Name, shopData.ProductsCount, shopData.OrdersCount)
+
+		writeJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"user":    userData,
+			"shop":    shopData,
+		})
+	}
+}
+
+// ============================================
 // SHOP HANDLERS (Multi-Shop Architecture)
 // ============================================
 

@@ -204,6 +204,12 @@ func main() {
 	http.HandleFunc("/api/seller/orders/", corsMiddleware(handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db))))
 
 	// ============================================
+	// SELLER PROFILE ENDPOINT
+	// ============================================
+	// Aggregated seller profile (user + shop stats)
+	http.HandleFunc("/api/seller/profile", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetSellerProfile(db))))
+
+	// ============================================
 	// SELLER DASHBOARD ENDPOINTS
 	// ============================================
 	// Dashboard statistikasi (Aggregation)
@@ -293,6 +299,9 @@ func main() {
 	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
 	fmt.Println("   GET  /api/seller/orders/stats  - Buyurtmalar statistikasi")
 	fmt.Println("   PUT  /api/seller/orders/{id}/status?status=confirmed - Status o'zgartirish")
+	fmt.Println("")
+	fmt.Println("👤 Seller Profile (JWT himoyalangan):")
+	fmt.Println("   GET /api/seller/profile - Aggregated profile (user + shop stats)")
 	fmt.Println("")
 	fmt.Println("🏠 Seller Dashboard (JWT himoyalangan):")
 	fmt.Println("   GET /api/seller/dashboard/stats - Dashboard statistikasi")
