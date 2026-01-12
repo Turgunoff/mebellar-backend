@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 
 	"mebellar-backend/handlers"
 	"mebellar-backend/pkg/seed"
+	"mebellar-backend/pkg/sms"
 
 	_ "mebellar-backend/docs" // Swagger docs - swag init dan keyin paydo bo'ladi
 
@@ -104,6 +106,9 @@ func main() {
 
 	// Kategoriyalar va mahsulotlarni seed qilish
 	seed.SeedAll(db)
+
+	// SMS Service (Eskiz.uz) sozlash
+	initSMSService()
 
 	// 2. Marshrutlar (Routes) - CORS middleware bilan
 	// Kategoriyalar
@@ -231,4 +236,35 @@ func addColumnIfNotExists(db *sql.DB, table, column, dataType string) {
 	if err != nil {
 		log.Printf("Ustun qo'shishda xatolik (%s.%s): %v", table, column, err)
 	}
+}
+
+// initSMSService - Eskiz.uz SMS xizmatini sozlash
+func initSMSService() {
+	eskizEmail := os.Getenv("ESKIZ_EMAIL")
+	eskizPassword := os.Getenv("ESKIZ_PASSWORD")
+
+	if eskizEmail == "" || eskizPassword == "" {
+		fmt.Println("⚠️  ESKIZ_EMAIL yoki ESKIZ_PASSWORD o'rnatilmagan")
+		fmt.Println("   SMS xizmati MOCK rejimida ishlaydi (konsolga chiqadi)")
+		fmt.Println("   Real SMS yuborish uchun environment variable o'rnating:")
+		fmt.Println("   export ESKIZ_EMAIL=your@email.com")
+		fmt.Println("   export ESKIZ_PASSWORD=yourpassword")
+		return
+	}
+
+	// Eskiz servisini yaratish
+	eskizService := sms.NewEskizService(eskizEmail, eskizPassword)
+
+	// Dastlabki login (background)
+	go func() {
+		if err := eskizService.Login(); err != nil {
+			log.Printf("⚠️ Eskiz login xatosi: %v", err)
+			log.Println("   SMS xizmati keyingi so'rovda qayta urinadi")
+		}
+	}()
+
+	// Handlers ga SMS servisini o'rnatish
+	handlers.SetSMSService(eskizService)
+
+	fmt.Println("✅ Eskiz SMS xizmati ulandi!")
 }

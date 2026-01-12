@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"mebellar-backend/models"
+	"mebellar-backend/pkg/sms"
 	"net/http"
 	"regexp"
 	"time"
@@ -23,6 +24,15 @@ var verifiedPhones = make(map[string]bool)
 
 // JWT secret key (production'da environment variable dan oling!)
 var jwtSecretKey = []byte("mebellar-super-secret-key-2024")
+
+// SMS Service - global SMS xizmati
+var smsService *sms.EskizService
+
+// SetSMSService - SMS xizmatini o'rnatish
+func SetSMSService(service *sms.EskizService) {
+	smsService = service
+	log.Println("✅ SMS Service initialized")
+}
 
 // generateOTP - 5 xonali tasodifiy kod yaratadi
 func generateOTP() string {
@@ -130,9 +140,21 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 		// OTP'ni saqlash
 		otpStore[req.Phone] = code
 
-		// MOCK SMS - konsolga chiqarish
-		log.Printf("📱 [REGISTRATION OTP] to %s: %s", req.Phone, code)
-		fmt.Printf("📱 MOCK SMS (Registration) to %s: %s\n", req.Phone, code)
+		// SMS yuborish
+		if smsService != nil {
+			// Real SMS yuborish (Eskiz.uz orqali)
+			go func(phone, otpCode string) {
+				if err := smsService.SendOTP(phone, otpCode); err != nil {
+					log.Printf("❌ SMS yuborishda xatolik: %v", err)
+					// Fallback - konsolga chiqarish
+					fmt.Printf("📱 FALLBACK SMS to %s: %s\n", phone, otpCode)
+				}
+			}(req.Phone, code)
+		} else {
+			// Development mode - MOCK SMS
+			log.Printf("📱 [REGISTRATION OTP] to %s: %s", req.Phone, code)
+			fmt.Printf("📱 MOCK SMS to %s: %s\n", req.Phone, code)
+		}
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
