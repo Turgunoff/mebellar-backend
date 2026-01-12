@@ -13,17 +13,18 @@ import (
 
 	_ "mebellar-backend/docs" // Swagger docs - swag init dan keyin paydo bo'ladi
 
+	"github.com/joho/godotenv"
 	httpSwagger "github.com/swaggo/http-swagger"
 	_ "github.com/lib/pq"
 )
 
-const (
-	host     = "localhost"
-	port     = 5432
-	user     = "mebel_user"
-	password = "MebelStrong2024!"
-	dbname   = "mebellar_olami"
-)
+// getEnv - environment variable olish (default bilan)
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
 
 // @title           Mebellar Olami API
 // @version         1.0
@@ -85,21 +86,40 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func main() {
+	// .env faylini yuklash
+	if err := godotenv.Load(); err != nil {
+		log.Println("⚠️  .env fayli topilmadi, environment variablelardan foydalaniladi")
+	} else {
+		fmt.Println("✅ .env fayli yuklandi")
+	}
+
+	// Environment variablelarni o'qish
+	dbHost := getEnv("DB_HOST", "localhost")
+	dbPort := getEnv("DB_PORT", "5432")
+	dbUser := getEnv("DB_USER", "mebel_user")
+	dbPassword := getEnv("DB_PASSWORD", "")
+	dbName := getEnv("DB_NAME", "mebellar_olami")
+	serverPort := getEnv("SERVER_PORT", "8081")
+	jwtSecret := getEnv("JWT_SECRET", "mebellar-super-secret-key-2024")
+
+	// JWT secretni handlers ga uzatish
+	handlers.SetJWTSecret(jwtSecret)
+
 	// 1. Bazaga ulanish
-	psqlInfo := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+	psqlInfo := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		dbHost, dbPort, dbUser, dbPassword, dbName)
 
 	db, err := sql.Open("postgres", psqlInfo)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("❌ Database connection error: ", err)
 	}
 	defer db.Close()
 
 	err = db.Ping()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("❌ Database ping error: ", err)
 	}
-	fmt.Println("✅ Baza ulangan!")
+	fmt.Printf("✅ Baza ulangan! (%s@%s:%s/%s)\n", dbUser, dbHost, dbPort, dbName)
 
 	// Users jadvalini yaratish (agar mavjud bo'lmasa)
 	createUsersTable(db)
@@ -187,9 +207,9 @@ func main() {
 	fmt.Println("   POST /api/user/become-seller")
 	fmt.Println("")
 	fmt.Println("📁 Static files: /uploads/*")
-	fmt.Println("📚 Swagger UI: http://45.93.201.167:8081/swagger/index.html")
+	fmt.Printf("📚 Swagger UI: http://localhost:%s/swagger/index.html\n", serverPort)
 	fmt.Println("🔧 CORS enabled for all origins")
-	log.Fatal(http.ListenAndServe(":8081", nil))
+	log.Fatal(http.ListenAndServe(":"+serverPort, nil))
 }
 
 // createUsersTable - users jadvalini yaratadi (agar mavjud bo'lmasa)

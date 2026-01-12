@@ -22,11 +22,17 @@ var otpStore = make(map[string]string)
 // Verified phones - OTP tasdiqlangan telefonlar
 var verifiedPhones = make(map[string]bool)
 
-// JWT secret key (production'da environment variable dan oling!)
+// JWT secret key - .env dan yuklanadi
 var jwtSecretKey = []byte("mebellar-super-secret-key-2024")
 
 // SMS Service - global SMS xizmati
 var smsService *sms.EskizService
+
+// SetJWTSecret - JWT secretni o'rnatish (.env dan)
+func SetJWTSecret(secret string) {
+	jwtSecretKey = []byte(secret)
+	log.Println("✅ JWT Secret configured")
+}
 
 // SetSMSService - SMS xizmatini o'rnatish
 func SetSMSService(service *sms.EskizService) {
