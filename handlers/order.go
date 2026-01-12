@@ -560,14 +560,9 @@ type UpdateStatusRequest struct {
 	Note   string `json:"note"`   // Optional custom note
 }
 
-// Cancellation reasons
-var ValidCancellationReasons = []string{
-	"no_stock",              // Mahsulot omborda qolmadi
-	"price_issue",           // Mijozga narx to'g'ri kelmadi
-	"unreachable",           // Mijoz bilan bog'lanib bo'lmadi
-	"customer_changed_mind", // Mijoz fikridan qaytdi
-	"other",                 // Boshqa
-}
+// Note: Cancellation reasons are now dynamic from DB (cancellation_reasons table)
+// The frontend fetches reasons from GET /api/common/cancellation-reasons
+// and sends the reason_text string directly
 
 // UpdateOrderStatus godoc
 // @Summary      Buyurtma statusini yangilash
@@ -632,7 +627,7 @@ func UpdateOrderStatus(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Validate cancellation reason
+		// Validate cancellation reason (must be provided, value comes from DB)
 		if newStatus == models.OrderStatusCancelled {
 			if req.Reason == "" {
 				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
@@ -641,21 +636,7 @@ func UpdateOrderStatus(db *sql.DB) http.HandlerFunc {
 				})
 				return
 			}
-			// Validate reason value
-			validReason := false
-			for _, r := range ValidCancellationReasons {
-				if r == req.Reason {
-					validReason = true
-					break
-				}
-			}
-			if !validReason {
-				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-					Success: false,
-					Message: "Noto'g'ri sabab: " + req.Reason,
-				})
-				return
-			}
+			// Note: Reason value is now dynamic from DB, no hardcoded validation
 		}
 
 		// Check order belongs to shop
