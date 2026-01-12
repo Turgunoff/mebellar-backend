@@ -7,6 +7,8 @@ import (
 	"mebellar-backend/models"
 	"net/http"
 	"strings"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // ============================================
@@ -156,6 +158,277 @@ func GetSellerProfile(db *sql.DB) http.HandlerFunc {
 			"user":    userData,
 			"shop":    shopData,
 		})
+	}
+}
+
+// UpdateSellerProfileRequest - Profil yangilash so'rovi
+type UpdateSellerProfileRequest struct {
+	FullName    *string `json:"full_name,omitempty"`
+	OldPassword *string `json:"old_password,omitempty"`
+	NewPassword *string `json:"new_password,omitempty"`
+}
+
+// UpdateSellerProfile godoc
+// @Summary      Sotuvchi profilini yangilash
+// @Description  Foydalanuvchi ismini va/yoki parolini yangilaydi
+// @Tags         seller
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body UpdateSellerProfileRequest true "Yangilash ma'lumotlari"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /seller/profile [put]
+func UpdateSellerProfile(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat PUT metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Avtorizatsiya talab qilinadi",
+			})
+			return
+		}
+
+		var req UpdateSellerProfileRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		// Check if at least one field to update
+		if req.FullName == nil && req.NewPassword == nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Yangilanadigan ma'lumot yo'q",
+			})
+			return
+		}
+
+		// If changing password, verify old password first
+		if req.NewPassword != nil {
+			if req.OldPassword == nil || *req.OldPassword == "" {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Eski parol kiritilishi shart",
+				})
+				return
+			}
+
+			if len(*req.NewPassword) < 6 {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Yangi parol kamida 6 ta belgidan iborat bo'lishi kerak",
+				})
+				return
+			}
+
+			// Verify old password
+			var currentPasswordHash string
+			err := db.QueryRow(`SELECT password_hash FROM users WHERE id = $1`, userID).Scan(&currentPasswordHash)
+			if err != nil {
+				log.Printf("UpdateSellerProfile password fetch error: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Server xatosi",
+				})
+				return
+			}
+
+			if err := bcrypt.CompareHashAndPassword([]byte(currentPasswordHash), []byte(*req.OldPassword)); err != nil {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Eski parol noto'g'ri",
+				})
+				return
+			}
+		}
+
+		// Build dynamic update query
+		updates := []string{}
+		args := []interface{}{}
+		argIndex := 1
+
+		if req.FullName != nil && strings.TrimSpace(*req.FullName) != "" {
+			updates = append(updates, "full_name = $"+string(rune('0'+argIndex)))
+			args = append(args, strings.TrimSpace(*req.FullName))
+			argIndex++
+		}
+
+		if req.NewPassword != nil {
+			// Hash new password
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(*req.NewPassword), bcrypt.DefaultCost)
+			if err != nil {
+				log.Printf("UpdateSellerProfile password hash error: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Server xatosi",
+				})
+				return
+			}
+			updates = append(updates, "password_hash = $"+string(rune('0'+argIndex)))
+			args = append(args, string(hashedPassword))
+			argIndex++
+		}
+
+		if len(updates) == 0 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Yangilanadigan ma'lumot yo'q",
+			})
+			return
+		}
+
+		// Add updated_at and user_id
+		updates = append(updates, "updated_at = NOW()")
+		args = append(args, userID)
+
+		query := "UPDATE users SET " + strings.Join(updates, ", ") + " WHERE id = $" + string(rune('0'+argIndex))
+
+		_, err := db.Exec(query, args...)
+		if err != nil {
+			log.Printf("UpdateSellerProfile update error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Profilni yangilashda xatolik",
+			})
+			return
+		}
+
+		log.Printf("✅ Seller profile updated: user_id=%s", userID)
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: "Profil muvaffaqiyatli yangilandi",
+		})
+	}
+}
+
+// DeleteSellerAccount godoc
+// @Summary      Hisobni o'chirish (soft delete)
+// @Description  Foydalanuvchi hisobini o'chiradi (is_active = false)
+// @Tags         seller
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /seller/account [delete]
+func DeleteSellerAccount(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat DELETE metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Avtorizatsiya talab qilinadi",
+			})
+			return
+		}
+
+		// Start transaction
+		tx, err := db.Begin()
+		if err != nil {
+			log.Printf("DeleteSellerAccount tx begin error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Server xatosi",
+			})
+			return
+		}
+		defer tx.Rollback()
+
+		// 1. Soft delete user (set is_active = false)
+		_, err = tx.Exec(`
+			UPDATE users 
+			SET is_active = false, updated_at = NOW() 
+			WHERE id = $1
+		`, userID)
+		if err != nil {
+			log.Printf("DeleteSellerAccount user update error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Hisobni o'chirishda xatolik",
+			})
+			return
+		}
+
+		// 2. Deactivate all shops owned by this user
+		_, err = tx.Exec(`
+			UPDATE seller_profiles 
+			SET is_verified = false, updated_at = NOW() 
+			WHERE user_id = $1
+		`, userID)
+		if err != nil {
+			log.Printf("DeleteSellerAccount shops update error: %v", err)
+			// Continue anyway - not critical
+		}
+
+		// 3. Deactivate all products from user's shops
+		_, err = tx.Exec(`
+			UPDATE products 
+			SET is_active = false, updated_at = NOW() 
+			WHERE shop_id IN (SELECT id FROM seller_profiles WHERE user_id = $1)
+		`, userID)
+		if err != nil {
+			log.Printf("DeleteSellerAccount products update error: %v", err)
+			// Continue anyway - not critical
+		}
+
+		// Commit transaction
+		if err := tx.Commit(); err != nil {
+			log.Printf("DeleteSellerAccount tx commit error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Server xatosi",
+			})
+			return
+		}
+
+		log.Printf("🗑️ Seller account soft deleted: user_id=%s", userID)
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: "Hisobingiz muvaffaqiyatli o'chirildi",
+		})
+	}
+}
+
+// SellerProfileHandler - /api/seller/profile uchun method router
+func SellerProfileHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			GetSellerProfile(db)(w, r)
+		case http.MethodPut:
+			UpdateSellerProfile(db)(w, r)
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Bu metod qo'llab-quvvatlanmaydi",
+			})
+		}
 	}
 }
 

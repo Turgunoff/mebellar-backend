@@ -206,8 +206,10 @@ func main() {
 	// ============================================
 	// SELLER PROFILE ENDPOINT
 	// ============================================
-	// Aggregated seller profile (user + shop stats)
-	http.HandleFunc("/api/seller/profile", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetSellerProfile(db))))
+	// Aggregated seller profile (GET + PUT)
+	http.HandleFunc("/api/seller/profile", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProfileHandler(db))))
+	// Delete account (soft delete)
+	http.HandleFunc("/api/seller/account", corsMiddleware(handlers.JWTMiddleware(db, handlers.DeleteSellerAccount(db))))
 
 	// ============================================
 	// SELLER DASHBOARD ENDPOINTS
@@ -301,7 +303,9 @@ func main() {
 	fmt.Println("   PUT  /api/seller/orders/{id}/status?status=confirmed - Status o'zgartirish")
 	fmt.Println("")
 	fmt.Println("👤 Seller Profile (JWT himoyalangan):")
-	fmt.Println("   GET /api/seller/profile - Aggregated profile (user + shop stats)")
+	fmt.Println("   GET    /api/seller/profile - Aggregated profile (user + shop stats)")
+	fmt.Println("   PUT    /api/seller/profile - Update profile (name, password)")
+	fmt.Println("   DELETE /api/seller/account - Soft delete account")
 	fmt.Println("")
 	fmt.Println("🏠 Seller Dashboard (JWT himoyalangan):")
 	fmt.Println("   GET /api/seller/dashboard/stats - Dashboard statistikasi")
@@ -351,6 +355,8 @@ func createUsersTable(db *sql.DB) {
 	// Mavjud jadvalga yangi ustunlarni qo'shish (agar yo'q bo'lsa)
 	addColumnIfNotExists(db, "users", "email", "VARCHAR(255) UNIQUE")
 	addColumnIfNotExists(db, "users", "avatar_url", "VARCHAR(500)")
+	addColumnIfNotExists(db, "users", "is_active", "BOOLEAN DEFAULT TRUE")
+	addColumnIfNotExists(db, "users", "role", "VARCHAR(50) DEFAULT 'customer'")
 
 	// Seller Profiles jadvalini yaratish
 	createSellerProfilesTable(db)
