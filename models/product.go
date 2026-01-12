@@ -141,6 +141,8 @@ type Product struct {
 	Variants         JSONBArray       `json:"variants,omitempty" swaggertype:"array,object"`
 	DeliverySettings DeliverySettings `json:"delivery_settings,omitempty"`
 	Rating           float64          `json:"rating" example:"4.8"`
+	ViewCount        int              `json:"view_count" example:"150"`
+	SoldCount        int              `json:"sold_count" example:"12"`
 	IsNew            bool             `json:"is_new" example:"true"`
 	IsPopular        bool             `json:"is_popular" example:"true"`
 	IsActive         bool             `json:"is_active" example:"true"`

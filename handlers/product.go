@@ -647,10 +647,11 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Parse pagination params
+		// Parse query params
 		pageStr := r.URL.Query().Get("page")
 		limitStr := r.URL.Query().Get("limit")
-		isActiveStr := r.URL.Query().Get("is_active")
+		sortBy := r.URL.Query().Get("sort")
+		filterBy := r.URL.Query().Get("filter")
 
 		page := 1
 		limit := 10
@@ -664,7 +665,7 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 
 		offset := (page - 1) * limit
 
-		// Build query
+		// Build query with analytics columns
 		countQuery := `SELECT COUNT(*) FROM products WHERE shop_id = $1`
 		dataQuery := `
 			SELECT 
@@ -672,7 +673,8 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				COALESCE(delivery_settings::text, '{}')::jsonb,
-				rating, is_new, is_popular, is_active, created_at
+				rating, is_new, is_popular, is_active, created_at,
+				COALESCE(view_count, 0), COALESCE(sold_count, 0)
 			FROM products 
 			WHERE shop_id = $1
 		`
@@ -680,21 +682,41 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 		args := []interface{}{shopID}
 		argIndex := 2
 
-		// Filter by is_active
-		if isActiveStr != "" {
-			isActive := isActiveStr == "true"
-			countQuery += fmt.Sprintf(" AND is_active = $%d", argIndex)
-			dataQuery += fmt.Sprintf(" AND is_active = $%d", argIndex)
-			args = append(args, isActive)
-			argIndex++
+		// Apply filter
+		switch filterBy {
+		case "active":
+			countQuery += " AND is_active = true"
+			dataQuery += " AND is_active = true"
+		case "inactive":
+			countQuery += " AND is_active = false"
+			dataQuery += " AND is_active = false"
+		case "discount":
+			countQuery += " AND discount_price IS NOT NULL AND discount_price > 0"
+			dataQuery += " AND discount_price IS NOT NULL AND discount_price > 0"
 		}
 
-		dataQuery += " ORDER BY created_at DESC"
+		// Apply sorting
+		var orderBy string
+		switch sortBy {
+		case "price_asc":
+			orderBy = " ORDER BY price ASC"
+		case "price_desc":
+			orderBy = " ORDER BY price DESC"
+		case "popular":
+			orderBy = " ORDER BY COALESCE(view_count, 0) DESC"
+		case "bestseller":
+			orderBy = " ORDER BY COALESCE(sold_count, 0) DESC"
+		case "rating":
+			orderBy = " ORDER BY rating DESC"
+		default: // "newest" or empty
+			orderBy = " ORDER BY created_at DESC"
+		}
+		dataQuery += orderBy
 		dataQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
 
 		// Get total count
 		var total int
-		err := db.QueryRow(countQuery, args[:len(args)]...).Scan(&total)
+		err := db.QueryRow(countQuery, args...).Scan(&total)
 		if err != nil {
 			log.Printf("❌ Products count xatosi: %v", err)
 			total = 0
@@ -720,6 +742,7 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 				&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants, &p.DeliverySettings,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
+				&p.ViewCount, &p.SoldCount,
 			)
 			if err != nil {
 				log.Printf("Product scan xatosi: %v", err)
@@ -728,7 +751,8 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 			products = append(products, p)
 		}
 
-		log.Printf("✅ Seller %s: %d ta mahsulot topildi (sahifa %d)", shopID, len(products), page)
+		log.Printf("✅ Seller %s: %d ta mahsulot topildi (sahifa %d, sort=%s, filter=%s)", 
+			shopID, len(products), page, sortBy, filterBy)
 
 		writeJSON(w, http.StatusOK, SellerProductsResponse{
 			Success:  true,
