@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
@@ -552,15 +553,31 @@ func SeedOrders(db *sql.DB) http.HandlerFunc {
 // UPDATE ORDER STATUS
 // ============================================
 
+// UpdateStatusRequest - status o'zgartirish so'rovi
+type UpdateStatusRequest struct {
+	Status string `json:"status"` // 'confirmed', 'shipping', 'completed', 'cancelled'
+	Reason string `json:"reason"` // Required if status is 'cancelled'
+	Note   string `json:"note"`   // Optional custom note
+}
+
+// Cancellation reasons
+var ValidCancellationReasons = []string{
+	"no_stock",              // Mahsulot omborda qolmadi
+	"price_issue",           // Mijozga narx to'g'ri kelmadi
+	"unreachable",           // Mijoz bilan bog'lanib bo'lmadi
+	"customer_changed_mind", // Mijoz fikridan qaytdi
+	"other",                 // Boshqa
+}
+
 // UpdateOrderStatus godoc
 // @Summary      Buyurtma statusini yangilash
-// @Description  Buyurtma statusini o'zgartirish
+// @Description  Buyurtma statusini o'zgartirish (bekor qilishda sabab ko'rsatish shart)
 // @Tags         seller-orders
 // @Accept       json
 // @Produce      json
 // @Param        X-Shop-ID header string true "Do'kon ID"
 // @Param        id path string true "Buyurtma ID"
-// @Param        status query string true "Yangi status"
+// @Param        body body UpdateStatusRequest true "Status va sabab"
 // @Success      200  {object}  models.OrderResponse
 // @Failure      400  {object}  models.AuthResponse
 // @Failure      403  {object}  models.AuthResponse
@@ -599,13 +616,46 @@ func UpdateOrderStatus(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		newStatus := r.URL.Query().Get("status")
+		// Parse JSON body
+		var req UpdateStatusRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			// Fallback to query param for backward compatibility
+			req.Status = r.URL.Query().Get("status")
+		}
+
+		newStatus := req.Status
 		if !models.IsValidOrderStatus(newStatus) {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Noto'g'ri status: " + newStatus,
 			})
 			return
+		}
+
+		// Validate cancellation reason
+		if newStatus == models.OrderStatusCancelled {
+			if req.Reason == "" {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Bekor qilish sababi ko'rsatilishi shart",
+				})
+				return
+			}
+			// Validate reason value
+			validReason := false
+			for _, r := range ValidCancellationReasons {
+				if r == req.Reason {
+					validReason = true
+					break
+				}
+			}
+			if !validReason {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Noto'g'ri sabab: " + req.Reason,
+				})
+				return
+			}
 		}
 
 		// Check order belongs to shop
@@ -634,17 +684,40 @@ func UpdateOrderStatus(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Update status
-		var completedAt *time.Time
-		if newStatus == models.OrderStatusCompleted {
-			now := time.Now()
+		// Prepare timestamps based on status
+		var completedAt, confirmedAt *time.Time
+		now := time.Now()
+
+		switch newStatus {
+		case models.OrderStatusConfirmed:
+			confirmedAt = &now
+		case models.OrderStatusCompleted:
 			completedAt = &now
 		}
 
-		query := `UPDATE orders SET status = $1, completed_at = $2 WHERE id = $3`
-		_, err = db.Exec(query, newStatus, completedAt, orderID)
-		if err != nil {
-			log.Printf("❌ Order status update xatosi: %v", err)
+		// Update status with reason if cancelled
+		var query string
+		var execErr error
+
+		if newStatus == models.OrderStatusCancelled {
+			query = `UPDATE orders SET 
+				status = $1, 
+				cancellation_reason = $2, 
+				rejection_note = $3,
+				completed_at = $4
+			WHERE id = $5`
+			_, execErr = db.Exec(query, newStatus, req.Reason, req.Note, &now, orderID)
+			log.Printf("📋 Buyurtma bekor qilindi: %s, Sabab: %s", orderID, req.Reason)
+		} else if newStatus == models.OrderStatusConfirmed {
+			query = `UPDATE orders SET status = $1, confirmed_at = $2 WHERE id = $3`
+			_, execErr = db.Exec(query, newStatus, confirmedAt, orderID)
+		} else {
+			query = `UPDATE orders SET status = $1, completed_at = $2 WHERE id = $3`
+			_, execErr = db.Exec(query, newStatus, completedAt, orderID)
+		}
+
+		if execErr != nil {
+			log.Printf("❌ Order status update xatosi: %v", execErr)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
 				Success: false,
 				Message: "Statusni yangilashda xatolik",
