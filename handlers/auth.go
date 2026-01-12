@@ -103,7 +103,7 @@ func writeJSON(w http.ResponseWriter, status int, data interface{}) {
 
 // SendOTP godoc
 // @Summary      OTP kod yuborish (ro'yxatdan o'tish uchun)
-// @Description  Telefon raqamiga 5 xonali tasdiqlash kodi yuboradi (Mock SMS - konsolga chiqadi). Avval bazadan telefon mavjudligini tekshiradi.
+// @Description  Telefon raqamiga 5 xonali tasdiqlash kodi yuboradi (Mock SMS - konsolga chiqadi). Avval bazadan telefon mavjudligini tekshiradi. Soft-deleted userlar qayta ro'yxatdan o'ta oladi.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -141,18 +141,19 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Bazadan telefon raqami mavjudligini tekshirish
+		// Bazadan telefon raqami mavjudligini tekshirish (is_active bilan)
 		var existingID string
-		err := db.QueryRow("SELECT id FROM users WHERE phone = $1", req.Phone).Scan(&existingID)
-		if err == nil {
-			// Telefon raqami allaqachon mavjud
+		var isActive bool
+		err := db.QueryRow("SELECT id, COALESCE(is_active, true) FROM users WHERE phone = $1", req.Phone).Scan(&existingID, &isActive)
+		if err == nil && isActive {
+			// Telefon raqami allaqachon mavjud VA faol
 			writeJSON(w, http.StatusConflict, models.AuthResponse{
 				Success: false,
 				Message: "Bu telefon raqami allaqachon ro'yxatdan o'tgan",
 			})
 			return
 		}
-		// sql.ErrNoRows bo'lsa - yaxshi, davom etamiz
+		// sql.ErrNoRows bo'lsa YOKI is_active = false bo'lsa - OTP yuboramiz
 
 		// 5 xonali OTP yaratish
 		code := generateOTP()
@@ -257,7 +258,7 @@ func VerifyOTP(db *sql.DB) http.HandlerFunc {
 
 // Register godoc
 // @Summary      Ro'yxatdan o'tish
-// @Description  Yangi foydalanuvchi yaratadi. Avval telefon raqami OTP orqali tasdiqlanishi kerak.
+// @Description  Yangi foydalanuvchi yaratadi yoki soft-deleted userni qayta faollashtiradi. Avval telefon raqami OTP orqali tasdiqlanishi kerak.
 // @Tags         auth
 // @Accept       json
 // @Produce      json
@@ -320,17 +321,6 @@ func Register(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Telefon raqami mavjudligini tekshirish
-		var existingID string
-		err := db.QueryRow("SELECT id FROM users WHERE phone = $1", req.Phone).Scan(&existingID)
-		if err == nil {
-			writeJSON(w, http.StatusConflict, models.AuthResponse{
-				Success: false,
-				Message: "Bu telefon raqami allaqachon ro'yxatdan o'tgan",
-			})
-			return
-		}
-
 		// Parolni hash qilish
 		passwordHash, err := hashPassword(req.Password)
 		if err != nil {
@@ -342,38 +332,139 @@ func Register(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-	// Role ni aniqlash - agar bo'sh bo'lsa "customer"
-	role := req.Role
-	if role == "" {
-		role = "customer"
-	}
-	// Faqat ruxsat etilgan role'lar
-	if role != "customer" && role != "seller" && role != "admin" {
-		role = "customer"
-	}
+		// Role ni aniqlash - agar bo'sh bo'lsa "customer"
+		role := req.Role
+		if role == "" {
+			role = "customer"
+		}
+		// Faqat ruxsat etilgan role'lar
+		if role != "customer" && role != "seller" && role != "admin" {
+			role = "customer"
+		}
 
-	// Foydalanuvchini bazaga qo'shish
-	var userID string
-	err = db.QueryRow(`
-		INSERT INTO users (full_name, phone, password_hash, role, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, NOW(), NOW())
-		RETURNING id
-	`, req.FullName, req.Phone, passwordHash, role).Scan(&userID)
+		// Telefon raqami mavjudligini tekshirish (is_active bilan)
+		var existingID string
+		var existingRole string
+		var isActive bool
+		err = db.QueryRow(`
+			SELECT id, COALESCE(role, 'customer'), COALESCE(is_active, true) 
+			FROM users WHERE phone = $1
+		`, req.Phone).Scan(&existingID, &existingRole, &isActive)
 
-	if err != nil {
-		log.Println("User insert xatosi:", err)
-		writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
-			Success: false,
-			Message: "Foydalanuvchi yaratishda xatolik",
-		})
-		return
-	}
+		if err == nil {
+			// User mavjud
+			if isActive {
+				// ACTIVE user - conflict
+				writeJSON(w, http.StatusConflict, models.AuthResponse{
+					Success: false,
+					Message: "Bu telefon raqami allaqachon ro'yxatdan o'tgan",
+				})
+				return
+			}
 
-	// Verified holatni o'chirish (faqat bir marta ishlatish uchun)
-	delete(verifiedPhones, req.Phone)
+			// SOFT-DELETED user - qayta faollashtirish (Reactivation)
+			log.Printf("♻️ Reactivating soft-deleted user: %s (ID: %s)", req.Phone, existingID)
 
-	// JWT token yaratish (role bilan)
-	token, err := generateJWT(userID, req.Phone, role)
+			// Transaction boshlash
+			tx, err := db.Begin()
+			if err != nil {
+				log.Println("Transaction start xatosi:", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Server xatosi",
+				})
+				return
+			}
+			defer tx.Rollback()
+
+			// 1. Userni qayta faollashtirish
+			_, err = tx.Exec(`
+				UPDATE users 
+				SET full_name = $1, password_hash = $2, is_active = true, updated_at = NOW()
+				WHERE id = $3
+			`, req.FullName, passwordHash, existingID)
+			if err != nil {
+				log.Println("User reactivation xatosi:", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Foydalanuvchini qayta faollashtirishda xatolik",
+				})
+				return
+			}
+
+			// 2. Shopni qayta faollashtirish (faqat shop, mahsulotlar emas!)
+			_, err = tx.Exec(`
+				UPDATE seller_profiles 
+				SET is_verified = true, updated_at = NOW()
+				WHERE user_id = $1
+			`, existingID)
+			if err != nil {
+				log.Println("Shop reactivation xatosi:", err)
+				// Shop yo'q bo'lishi mumkin - xatolik emas
+			}
+
+			// Transaction commit
+			if err = tx.Commit(); err != nil {
+				log.Println("Transaction commit xatosi:", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Server xatosi",
+				})
+				return
+			}
+
+			log.Printf("✅ User reactivated: %s (Shop activated, Products remain inactive)", req.Phone)
+
+			// Verified holatni o'chirish
+			delete(verifiedPhones, req.Phone)
+
+			// JWT token yaratish (eski role bilan)
+			token, err := generateJWT(existingID, req.Phone, existingRole)
+			if err != nil {
+				log.Println("JWT xatosi:", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Token yaratishda xatolik",
+				})
+				return
+			}
+
+			writeJSON(w, http.StatusCreated, models.AuthResponse{
+				Success: true,
+				Message: "Hisob muvaffaqiyatli qayta faollashtirildi",
+				Token:   token,
+				User: &models.User{
+					ID:       existingID,
+					FullName: req.FullName,
+					Phone:    req.Phone,
+					Role:     existingRole,
+				},
+			})
+			return
+		}
+
+		// YANGI user - standart INSERT
+		var userID string
+		err = db.QueryRow(`
+			INSERT INTO users (full_name, phone, password_hash, role, is_active, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, true, NOW(), NOW())
+			RETURNING id
+		`, req.FullName, req.Phone, passwordHash, role).Scan(&userID)
+
+		if err != nil {
+			log.Println("User insert xatosi:", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi yaratishda xatolik",
+			})
+			return
+		}
+
+		// Verified holatni o'chirish (faqat bir marta ishlatish uchun)
+		delete(verifiedPhones, req.Phone)
+
+		// JWT token yaratish (role bilan)
+		token, err := generateJWT(userID, req.Phone, role)
 		if err != nil {
 			log.Println("JWT xatosi:", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -383,17 +474,17 @@ func Register(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-	writeJSON(w, http.StatusCreated, models.AuthResponse{
-		Success: true,
-		Message: "Ro'yxatdan o'tish muvaffaqiyatli",
-		Token:   token,
-		User: &models.User{
-			ID:       userID,
-			FullName: req.FullName,
-			Phone:    req.Phone,
-			Role:     role,
-		},
-	})
+		writeJSON(w, http.StatusCreated, models.AuthResponse{
+			Success: true,
+			Message: "Ro'yxatdan o'tish muvaffaqiyatli",
+			Token:   token,
+			User: &models.User{
+				ID:       userID,
+				FullName: req.FullName,
+				Phone:    req.Phone,
+				Role:     role,
+			},
+		})
 	}
 }
 
@@ -428,30 +519,41 @@ func Login(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-	// Foydalanuvchini topish
+	// Foydalanuvchini topish (is_active tekshirish bilan)
 	var user models.User
 	var passwordHash string
+	var isActive bool
 	err := db.QueryRow(`
-		SELECT id, full_name, phone, COALESCE(role, 'customer'), password_hash, created_at, updated_at
+		SELECT id, full_name, phone, COALESCE(role, 'customer'), password_hash, 
+		       COALESCE(is_active, true), created_at, updated_at
 		FROM users WHERE phone = $1
-	`, req.Phone).Scan(&user.ID, &user.FullName, &user.Phone, &user.Role, &passwordHash, &user.CreatedAt, &user.UpdatedAt)
+	`, req.Phone).Scan(&user.ID, &user.FullName, &user.Phone, &user.Role, &passwordHash, &isActive, &user.CreatedAt, &user.UpdatedAt)
 
-		if err == sql.ErrNoRows {
-			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
-				Success: false,
-				Message: "Telefon raqami yoki parol noto'g'ri",
-			})
-			return
-		}
+	if err == sql.ErrNoRows {
+		writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+			Success: false,
+			Message: "Telefon raqami yoki parol noto'g'ri",
+		})
+		return
+	}
 
-		if err != nil {
-			log.Println("Login query xatosi:", err)
-			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
-				Success: false,
-				Message: "Server xatosi",
-			})
-			return
-		}
+	if err != nil {
+		log.Println("Login query xatosi:", err)
+		writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+			Success: false,
+			Message: "Server xatosi",
+		})
+		return
+	}
+
+	// Soft-deleted user login qila olmaydi
+	if !isActive {
+		writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+			Success: false,
+			Message: "Hisob o'chirilgan. Qayta ro'yxatdan o'ting.",
+		})
+		return
+	}
 
 	// Parolni tekshirish
 	if !checkPassword(req.Password, passwordHash) {
