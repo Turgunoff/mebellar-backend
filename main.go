@@ -174,8 +174,11 @@ func main() {
 	// Do'kon bo'yicha operatsiyalar (GET, PUT, DELETE)
 	http.HandleFunc("/api/seller/shops/", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db))))
 
-	// Seller mahsulotlari
-	http.HandleFunc("/api/seller/products", corsMiddleware(handlers.JWTMiddleware(db, handlers.CreateProduct(db))))
+	// Seller mahsulotlari (GET: ro'yxat, POST: yaratish)
+	http.HandleFunc("/api/seller/products", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductsHandler(db))))
+
+	// Seller mahsulot item (PUT: yangilash, DELETE: o'chirish)
+	http.HandleFunc("/api/seller/products/", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db))))
 
 	// Ommaviy do'kon sahifasi (slug bo'yicha)
 	http.HandleFunc("/api/shops/", corsMiddleware(handlers.GetPublicShopBySlug(db)))

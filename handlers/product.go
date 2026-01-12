@@ -16,6 +16,7 @@ import (
 	"mebellar-backend/models"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 )
 
 // GetProducts godoc
@@ -598,6 +599,612 @@ func quoteStrings(strs []string) []string {
 		result[i] = fmt.Sprintf("\"%s\"", s)
 	}
 	return result
+}
+
+// SellerProductsResponse - Seller mahsulotlari javobi (pagination bilan)
+type SellerProductsResponse struct {
+	Success  bool             `json:"success"`
+	Message  string           `json:"message,omitempty"`
+	Products []models.Product `json:"products"`
+	Total    int              `json:"total"`
+	Page     int              `json:"page"`
+	Limit    int              `json:"limit"`
+}
+
+// GetSellerProducts godoc
+// @Summary      Seller mahsulotlarini olish
+// @Description  Joriy do'konning mahsulotlari ro'yxatini qaytaradi (pagination bilan)
+// @Tags         seller-products
+// @Accept       json
+// @Produce      json
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Param        page query int false "Sahifa raqami (default: 1)"
+// @Param        limit query int false "Har sahifadagi mahsulotlar soni (default: 10)"
+// @Param        is_active query bool false "Faol/Nofaol filtr"
+// @Success      200  {object}  SellerProductsResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/products [get]
+func GetSellerProducts(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Get shop ID from header
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		// Parse pagination params
+		pageStr := r.URL.Query().Get("page")
+		limitStr := r.URL.Query().Get("limit")
+		isActiveStr := r.URL.Query().Get("is_active")
+
+		page := 1
+		limit := 10
+
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 50 {
+			limit = l
+		}
+
+		offset := (page - 1) * limit
+
+		// Build query
+		countQuery := `SELECT COUNT(*) FROM products WHERE shop_id = $1`
+		dataQuery := `
+			SELECT 
+				id, category_id, name, description, price, discount_price,
+				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
+				COALESCE(variants::text, '[]')::jsonb,
+				COALESCE(delivery_settings::text, '{}')::jsonb,
+				rating, is_new, is_popular, is_active, created_at
+			FROM products 
+			WHERE shop_id = $1
+		`
+
+		args := []interface{}{shopID}
+		argIndex := 2
+
+		// Filter by is_active
+		if isActiveStr != "" {
+			isActive := isActiveStr == "true"
+			countQuery += fmt.Sprintf(" AND is_active = $%d", argIndex)
+			dataQuery += fmt.Sprintf(" AND is_active = $%d", argIndex)
+			args = append(args, isActive)
+			argIndex++
+		}
+
+		dataQuery += " ORDER BY created_at DESC"
+		dataQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+
+		// Get total count
+		var total int
+		err := db.QueryRow(countQuery, args[:len(args)]...).Scan(&total)
+		if err != nil {
+			log.Printf("❌ Products count xatosi: %v", err)
+			total = 0
+		}
+
+		// Get products
+		args = append(args, limit, offset)
+		rows, err := db.Query(dataQuery, args...)
+		if err != nil {
+			log.Printf("❌ Seller products query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulotlarni olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		products := []models.Product{}
+		for rows.Next() {
+			var p models.Product
+			err := rows.Scan(
+				&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.Images, &p.Specs, &p.Variants, &p.DeliverySettings,
+				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
+			)
+			if err != nil {
+				log.Printf("Product scan xatosi: %v", err)
+				continue
+			}
+			products = append(products, p)
+		}
+
+		log.Printf("✅ Seller %s: %d ta mahsulot topildi (sahifa %d)", shopID, len(products), page)
+
+		writeJSON(w, http.StatusOK, SellerProductsResponse{
+			Success:  true,
+			Products: products,
+			Total:    total,
+			Page:     page,
+			Limit:    limit,
+		})
+	}
+}
+
+// SellerProductsHandler - GET va POST uchun handler
+func SellerProductsHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			GetSellerProducts(db)(w, r)
+		case http.MethodPost:
+			CreateProduct(db)(w, r)
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET yoki POST metodi qo'llab-quvvatlanadi",
+			})
+		}
+	}
+}
+
+// UpdateProduct godoc
+// @Summary      Mahsulotni yangilash
+// @Description  Mavjud mahsulot ma'lumotlarini yangilash
+// @Tags         seller-products
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        id path string true "Mahsulot ID"
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Success      200  {object}  models.ProductResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/products/{id} [put]
+func UpdateProduct(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat PUT metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Get product ID from URL path
+		path := r.URL.Path
+		parts := strings.Split(path, "/")
+		if len(parts) < 4 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot ID kerak",
+			})
+			return
+		}
+		productID := parts[len(parts)-1]
+
+		// Validate UUID
+		if _, err := uuid.Parse(productID); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri mahsulot ID formati",
+			})
+			return
+		}
+
+		// Get shop ID from header
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		// Check if product belongs to this shop
+		var existingShopID string
+		var existingImages pq.StringArray
+		err := db.QueryRow(
+			"SELECT COALESCE(shop_id::text, ''), COALESCE(images, '{}') FROM products WHERE id = $1",
+			productID,
+		).Scan(&existingShopID, &existingImages)
+
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("❌ Product check xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulotni tekshirishda xatolik",
+			})
+			return
+		}
+
+		// Security check: product must belong to this shop
+		if existingShopID != shopID {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu mahsulot sizga tegishli emas",
+			})
+			return
+		}
+
+		// Parse multipart form
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Form ma'lumotlarini o'qishda xatolik: " + err.Error(),
+			})
+			return
+		}
+
+		// Get form values
+		name := strings.TrimSpace(r.FormValue("name"))
+		description := strings.TrimSpace(r.FormValue("description"))
+		priceStr := r.FormValue("price")
+		discountPriceStr := r.FormValue("discount_price")
+		categoryID := r.FormValue("category_id")
+		specsJSON := r.FormValue("specs")
+		variantsJSON := r.FormValue("variants")
+		deliverySettingsJSON := r.FormValue("delivery_settings")
+		isNewStr := r.FormValue("is_new")
+		isPopularStr := r.FormValue("is_popular")
+		keepExistingImagesStr := r.FormValue("keep_existing_images") // "true" or "false"
+
+		// Validate required fields
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot nomi kiritilishi shart",
+			})
+			return
+		}
+
+		// Parse price
+		price, err := strconv.ParseFloat(priceStr, 64)
+		if err != nil || price <= 0 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Narx noto'g'ri formatda",
+			})
+			return
+		}
+
+		// Parse discount price
+		var discountPrice float64
+		if discountPriceStr != "" {
+			discountPrice, _ = strconv.ParseFloat(discountPriceStr, 64)
+		}
+
+		// Category ID (optional for update)
+		var categoryIDPtr *string
+		if categoryID != "" {
+			categoryIDPtr = &categoryID
+		}
+
+		// Parse specs
+		specs := make(map[string]interface{})
+		if specsJSON != "" {
+			if err := json.Unmarshal([]byte(specsJSON), &specs); err != nil {
+				log.Printf("⚠️ Specs parse xatosi: %v", err)
+			}
+		}
+
+		// Parse variants
+		variants := []map[string]interface{}{}
+		if variantsJSON != "" {
+			if err := json.Unmarshal([]byte(variantsJSON), &variants); err != nil {
+				log.Printf("⚠️ Variants parse xatosi: %v", err)
+			}
+		}
+
+		// Parse delivery settings
+		deliverySettings := models.DeliverySettings{}
+		if deliverySettingsJSON != "" {
+			if err := json.Unmarshal([]byte(deliverySettingsJSON), &deliverySettings); err != nil {
+				log.Printf("⚠️ DeliverySettings parse xatosi: %v", err)
+			}
+		}
+
+		// Boolean flags
+		isNew := isNewStr == "true"
+		isPopular := isPopularStr == "true"
+		keepExistingImages := keepExistingImagesStr != "false" // Default: keep existing
+
+		// Handle images
+		imageURLs := []string{}
+
+		// Keep existing images if requested
+		if keepExistingImages {
+			imageURLs = append(imageURLs, existingImages...)
+		}
+
+		// Handle new image uploads
+		files := r.MultipartForm.File["images"]
+		if len(files) > 0 {
+			uploadDir := "./uploads/products"
+			if err := os.MkdirAll(uploadDir, 0755); err != nil {
+				log.Printf("❌ Upload dir yaratishda xatolik: %v", err)
+			}
+
+			for i, fileHeader := range files {
+				file, err := fileHeader.Open()
+				if err != nil {
+					log.Printf("⚠️ File open xatosi: %v", err)
+					continue
+				}
+				defer file.Close()
+
+				// Generate unique filename
+				ext := filepath.Ext(fileHeader.Filename)
+				if ext == "" {
+					ext = ".jpg"
+				}
+				newFilename := fmt.Sprintf("%s_%d%s", uuid.New().String(), i, ext)
+				filePath := filepath.Join(uploadDir, newFilename)
+
+				// Save file
+				dst, err := os.Create(filePath)
+				if err != nil {
+					log.Printf("⚠️ File create xatosi: %v", err)
+					continue
+				}
+				defer dst.Close()
+
+				if _, err := io.Copy(dst, file); err != nil {
+					log.Printf("⚠️ File copy xatosi: %v", err)
+					continue
+				}
+
+				imageURLs = append(imageURLs, "/uploads/products/"+newFilename)
+				log.Printf("✅ Yangi rasm saqlandi: %s", newFilename)
+			}
+		}
+
+		// Convert specs and variants to JSONB values
+		specsValue, _ := json.Marshal(specs)
+		variantsValue, _ := json.Marshal(variants)
+		deliveryValue, _ := json.Marshal(deliverySettings)
+
+		// Update product
+		query := `
+			UPDATE products SET
+				name = $1,
+				description = $2,
+				price = $3,
+				discount_price = $4,
+				category_id = $5,
+				images = $6,
+				specs = $7,
+				variants = $8,
+				delivery_settings = $9,
+				is_new = $10,
+				is_popular = $11,
+				updated_at = $12
+			WHERE id = $13
+			RETURNING id
+		`
+
+		var updatedID string
+		err = db.QueryRow(
+			query,
+			name,
+			description,
+			price,
+			discountPrice,
+			categoryIDPtr,
+			fmt.Sprintf("{%s}", strings.Join(quoteStrings(imageURLs), ",")),
+			specsValue,
+			variantsValue,
+			deliveryValue,
+			isNew,
+			isPopular,
+			time.Now(),
+			productID,
+		).Scan(&updatedID)
+
+		if err != nil {
+			log.Printf("❌ Product update xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulotni yangilashda xatolik: " + err.Error(),
+			})
+			return
+		}
+
+		log.Printf("✅ Mahsulot yangilandi: %s - %s", updatedID, name)
+
+		// Return updated product
+		var discountPricePtr *float64
+		if discountPrice > 0 {
+			discountPricePtr = &discountPrice
+		}
+
+		product := models.Product{
+			ID:               updatedID,
+			CategoryID:       categoryIDPtr,
+			Name:             name,
+			Description:      description,
+			Price:            price,
+			DiscountPrice:    discountPricePtr,
+			Images:           pq.StringArray(imageURLs),
+			Specs:            specs,
+			Variants:         variants,
+			DeliverySettings: deliverySettings,
+			IsNew:            isNew,
+			IsPopular:        isPopular,
+			IsActive:         true,
+		}
+
+		writeJSON(w, http.StatusOK, models.ProductResponse{
+			Success: true,
+			Message: "Mahsulot muvaffaqiyatli yangilandi",
+			Product: &product,
+		})
+	}
+}
+
+// DeleteProduct godoc
+// @Summary      Mahsulotni o'chirish
+// @Description  Mahsulotni bazadan o'chirish (hard delete)
+// @Tags         seller-products
+// @Produce      json
+// @Param        id path string true "Mahsulot ID"
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Success      200  {object}  models.AuthResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/products/{id} [delete]
+func DeleteProduct(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat DELETE metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Get product ID from URL path
+		path := r.URL.Path
+		parts := strings.Split(path, "/")
+		if len(parts) < 4 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot ID kerak",
+			})
+			return
+		}
+		productID := parts[len(parts)-1]
+
+		// Validate UUID
+		if _, err := uuid.Parse(productID); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri mahsulot ID formati",
+			})
+			return
+		}
+
+		// Get shop ID from header
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		// Check if product belongs to this shop and get images
+		var existingShopID string
+		var existingImages pq.StringArray
+		err := db.QueryRow(
+			"SELECT COALESCE(shop_id::text, ''), COALESCE(images, '{}') FROM products WHERE id = $1",
+			productID,
+		).Scan(&existingShopID, &existingImages)
+
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("❌ Product check xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulotni tekshirishda xatolik",
+			})
+			return
+		}
+
+		// Security check: product must belong to this shop
+		if existingShopID != shopID {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu mahsulot sizga tegishli emas",
+			})
+			return
+		}
+
+		// Delete product from database
+		result, err := db.Exec("DELETE FROM products WHERE id = $1", productID)
+		if err != nil {
+			log.Printf("❌ Product delete xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulotni o'chirishda xatolik: " + err.Error(),
+			})
+			return
+		}
+
+		rowsAffected, _ := result.RowsAffected()
+		if rowsAffected == 0 {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot topilmadi yoki allaqachon o'chirilgan",
+			})
+			return
+		}
+
+		// Delete associated images from disk
+		for _, imgPath := range existingImages {
+			if strings.HasPrefix(imgPath, "/uploads/") {
+				fullPath := "." + imgPath
+				if err := os.Remove(fullPath); err != nil {
+					log.Printf("⚠️ Rasm o'chirishda xatolik: %s - %v", fullPath, err)
+				} else {
+					log.Printf("✅ Rasm o'chirildi: %s", fullPath)
+				}
+			}
+		}
+
+		log.Printf("✅ Mahsulot o'chirildi: %s", productID)
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: "Mahsulot muvaffaqiyatli o'chirildi",
+		})
+	}
+}
+
+// SellerProductItemHandler - PUT va DELETE uchun handler (/api/seller/products/{id})
+func SellerProductItemHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			UpdateProduct(db)(w, r)
+		case http.MethodDelete:
+			DeleteProduct(db)(w, r)
+		default:
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat PUT yoki DELETE metodi qo'llab-quvvatlanadi",
+			})
+		}
+	}
 }
 
 // writeJSON is defined in auth.go - reusing it here
