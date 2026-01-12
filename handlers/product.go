@@ -890,6 +890,7 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 		deliverySettingsJSON := r.FormValue("delivery_settings")
 		isNewStr := r.FormValue("is_new")
 		isPopularStr := r.FormValue("is_popular")
+		isActiveStr := r.FormValue("is_active")
 		keepExistingImagesStr := r.FormValue("keep_existing_images") // "true" or "false"
 
 		// Validate required fields
@@ -950,6 +951,7 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 		// Boolean flags
 		isNew := isNewStr == "true"
 		isPopular := isPopularStr == "true"
+		isActive := isActiveStr != "false" // Default: keep active (preserve existing state)
 		keepExistingImages := keepExistingImagesStr != "false" // Default: keep existing
 
 		// Handle images
@@ -1007,7 +1009,7 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 		variantsValue, _ := json.Marshal(variants)
 		deliveryValue, _ := json.Marshal(deliverySettings)
 
-		// Update product
+		// Update product (including is_active to preserve state)
 		query := `
 			UPDATE products SET
 				name = $1,
@@ -1020,8 +1022,9 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 				variants = $8,
 				delivery_settings = $9,
 				is_new = $10,
-				is_popular = $11
-			WHERE id = $12
+				is_popular = $11,
+				is_active = $12
+			WHERE id = $13
 			RETURNING id
 		`
 
@@ -1039,6 +1042,7 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 			deliveryValue,
 			isNew,
 			isPopular,
+			isActive,
 			productID,
 		).Scan(&updatedID)
 
@@ -1072,7 +1076,7 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 			DeliverySettings: deliverySettings,
 			IsNew:            isNew,
 			IsPopular:        isPopular,
-			IsActive:         true,
+			IsActive:         isActive, // Preserve the actual state
 		}
 
 		writeJSON(w, http.StatusOK, models.ProductResponse{
