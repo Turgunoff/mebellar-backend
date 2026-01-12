@@ -996,9 +996,8 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 				variants = $8,
 				delivery_settings = $9,
 				is_new = $10,
-				is_popular = $11,
-				updated_at = $12
-			WHERE id = $13
+				is_popular = $11
+			WHERE id = $12
 			RETURNING id
 		`
 
@@ -1016,7 +1015,6 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 			deliveryValue,
 			isNew,
 			isPopular,
-			time.Now(),
 			productID,
 		).Scan(&updatedID)
 
