@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"mebellar-backend/models"
+	"mebellar-backend/pkg/websocket"
 )
 
 // ============================================
@@ -538,6 +539,20 @@ func SeedOrders(db *sql.DB) http.HandlerFunc {
 			}
 
 			createdCount++
+
+			// 🔔 Broadcast new order to WebSocket clients (only for "new" status orders)
+			if status == models.OrderStatusNew && len(items) > 0 {
+				websocket.BroadcastNewOrder(shopID, websocket.NewOrderPayload{
+					OrderID:      orderID,
+					ClientName:   clientName,
+					ClientPhone:  clientPhone,
+					TotalAmount:  totalAmount,
+					ProductCount: len(items),
+					ProductName:  items[0].ProductName,
+					ProductImage: items[0].ProductImage,
+					CreatedAt:    createdAt.Format("02.01.2006 15:04"),
+				})
+			}
 		}
 
 		log.Printf("✅ %d ta test buyurtma yaratildi (shop: %s)", createdCount, shopID)
@@ -545,6 +560,174 @@ func SeedOrders(db *sql.DB) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
 			Message: fmt.Sprintf("%d ta test buyurtma muvaffaqiyatli yaratildi", createdCount),
+		})
+	}
+}
+
+// ============================================
+// CREATE ORDER (Public - for Customer App)
+// ============================================
+
+// CreateOrderRequest - yangi buyurtma yaratish so'rovi
+type CreateOrderRequest struct {
+	ShopID        string              `json:"shop_id"`
+	ClientName    string              `json:"client_name"`
+	ClientPhone   string              `json:"client_phone"`
+	ClientAddress string              `json:"client_address"`
+	ClientNote    string              `json:"client_note"`
+	Items         []CreateOrderItem   `json:"items"`
+}
+
+type CreateOrderItem struct {
+	ProductID string `json:"product_id"`
+	Quantity  int    `json:"quantity"`
+}
+
+// CreateOrder godoc
+// @Summary      Yangi buyurtma yaratish
+// @Description  Mijoz tomonidan yangi buyurtma yaratish (Customer App)
+// @Tags         orders
+// @Accept       json
+// @Produce      json
+// @Param        body body CreateOrderRequest true "Buyurtma ma'lumotlari"
+// @Success      201  {object}  models.OrderResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /orders [post]
+func CreateOrder(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		var req CreateOrderRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri JSON format",
+			})
+			return
+		}
+
+		// Validate required fields
+		if req.ShopID == "" || req.ClientName == "" || req.ClientPhone == "" || len(req.Items) == 0 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "shop_id, client_name, client_phone va items majburiy",
+			})
+			return
+		}
+
+		// Calculate total from products
+		var totalAmount float64
+		var orderItems []struct {
+			ProductID    string
+			ProductName  string
+			ProductImage string
+			Quantity     int
+			Price        float64
+		}
+
+		for _, item := range req.Items {
+			var productName, productImage string
+			var price float64
+
+			err := db.QueryRow(`
+				SELECT name, COALESCE(images[1], ''), 
+					COALESCE(discount_price, price) as final_price
+				FROM products 
+				WHERE id = $1 AND is_active = true
+			`, item.ProductID).Scan(&productName, &productImage, &price)
+
+			if err != nil {
+				log.Printf("⚠️ Product not found: %s", item.ProductID)
+				continue
+			}
+
+			quantity := item.Quantity
+			if quantity < 1 {
+				quantity = 1
+			}
+
+			totalAmount += price * float64(quantity)
+			orderItems = append(orderItems, struct {
+				ProductID    string
+				ProductName  string
+				ProductImage string
+				Quantity     int
+				Price        float64
+			}{
+				ProductID:    item.ProductID,
+				ProductName:  productName,
+				ProductImage: productImage,
+				Quantity:     quantity,
+				Price:        price,
+			})
+		}
+
+		if len(orderItems) == 0 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Hech qanday faol mahsulot topilmadi",
+			})
+			return
+		}
+
+		// Create order
+		orderID := uuid.New().String()
+		now := time.Now()
+
+		_, err := db.Exec(`
+			INSERT INTO orders (id, shop_id, client_name, client_phone, client_address, 
+				client_note, total_amount, status, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		`, orderID, req.ShopID, req.ClientName, req.ClientPhone, req.ClientAddress,
+			req.ClientNote, totalAmount, models.OrderStatusNew, now)
+
+		if err != nil {
+			log.Printf("❌ Order create xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtma yaratishda xatolik",
+			})
+			return
+		}
+
+		// Create order items
+		for _, item := range orderItems {
+			itemID := uuid.New().String()
+			_, err := db.Exec(`
+				INSERT INTO order_items (id, order_id, product_id, product_name, product_image, quantity, price)
+				VALUES ($1, $2, $3, $4, $5, $6, $7)
+			`, itemID, orderID, item.ProductID, item.ProductName, item.ProductImage, item.Quantity, item.Price)
+
+			if err != nil {
+				log.Printf("⚠️ Order item insert xatosi: %v", err)
+			}
+		}
+
+		// 🔔 Broadcast new order to seller via WebSocket
+		websocket.BroadcastNewOrder(req.ShopID, websocket.NewOrderPayload{
+			OrderID:      orderID,
+			ClientName:   req.ClientName,
+			ClientPhone:  req.ClientPhone,
+			TotalAmount:  totalAmount,
+			ProductCount: len(orderItems),
+			ProductName:  orderItems[0].ProductName,
+			ProductImage: orderItems[0].ProductImage,
+			CreatedAt:    now.Format("02.01.2006 15:04"),
+		})
+
+		log.Printf("✅ Yangi buyurtma yaratildi: %s (shop: %s, total: %.0f)", orderID, req.ShopID, totalAmount)
+
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"success":  true,
+			"message":  "Buyurtma muvaffaqiyatli yaratildi",
+			"order_id": orderID,
 		})
 	}
 }
@@ -707,6 +890,13 @@ func UpdateOrderStatus(db *sql.DB) http.HandlerFunc {
 		}
 
 		log.Printf("✅ Buyurtma %s statusi yangilandi: %s", orderID, newStatus)
+
+		// 🔔 Broadcast order status update to WebSocket clients
+		websocket.BroadcastOrderUpdate(shopID, websocket.OrderUpdatePayload{
+			OrderID:   orderID,
+			OldStatus: "", // We don't track old status currently
+			NewStatus: newStatus,
+		})
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,

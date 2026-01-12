@@ -10,12 +10,13 @@ import (
 	"mebellar-backend/handlers"
 	"mebellar-backend/pkg/seed"
 	"mebellar-backend/pkg/sms"
+	"mebellar-backend/pkg/websocket"
 
 	_ "mebellar-backend/docs" // Swagger docs - swag init dan keyin paydo bo'ladi
 
 	"github.com/joho/godotenv"
-	httpSwagger "github.com/swaggo/http-swagger"
 	_ "github.com/lib/pq"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 // getEnv - environment variable olish (default bilan)
@@ -105,6 +106,9 @@ func main() {
 	// JWT secretni handlers ga uzatish
 	handlers.SetJWTSecret(jwtSecret)
 
+	// WebSocket JWT secretni uzatish
+	websocket.SetJWTSecret(jwtSecret)
+
 	// 1. Bazaga ulanish
 	psqlInfo := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		dbHost, dbPort, dbUser, dbPassword, dbName)
@@ -129,6 +133,9 @@ func main() {
 
 	// SMS Service (Eskiz.uz) sozlash
 	initSMSService()
+
+	// WebSocket Hub ishga tushirish
+	websocket.InitGlobalHub()
 
 	// 2. Marshrutlar (Routes) - CORS middleware bilan
 	// Kategoriyalar
@@ -181,6 +188,12 @@ func main() {
 	http.HandleFunc("/api/seller/products/", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db))))
 
 	// ============================================
+	// CUSTOMER ORDERS ENDPOINTS (Public)
+	// ============================================
+	// Yangi buyurtma yaratish (Customer App)
+	http.HandleFunc("/api/orders", corsMiddleware(handlers.CreateOrder(db)))
+
+	// ============================================
 	// SELLER ORDERS ENDPOINTS
 	// ============================================
 	// Buyurtmalar ro'yxati
@@ -216,6 +229,12 @@ func main() {
 
 	// Ommaviy do'kon sahifasi (slug bo'yicha)
 	http.HandleFunc("/api/shops/", corsMiddleware(handlers.GetPublicShopBySlug(db)))
+
+	// ============================================
+	// WEBSOCKET ENDPOINT (Real-time)
+	// ============================================
+	// WebSocket ulanish (JWT + shop_id orqali)
+	http.HandleFunc("/ws/orders", websocket.HandleWebSocket(db))
 
 	// 3. Static files - uploads papkasini serve qilish
 	fs := http.FileServer(http.Dir("uploads"))
@@ -267,6 +286,9 @@ func main() {
 	fmt.Println("   PUT    /api/seller/shops/{id} - Do'konni yangilash")
 	fmt.Println("   DELETE /api/seller/shops/{id} - Do'konni o'chirish")
 	fmt.Println("")
+	fmt.Println("🛒 Orders (Customer App - Ommaviy):")
+	fmt.Println("   POST /api/orders - Yangi buyurtma yaratish (WebSocket broadcast)")
+	fmt.Println("")
 	fmt.Println("📦 Seller Orders (JWT himoyalangan):")
 	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
 	fmt.Println("   GET  /api/seller/orders/stats  - Buyurtmalar statistikasi")
@@ -286,6 +308,9 @@ func main() {
 	fmt.Println("")
 	fmt.Println("🌐 Public Shop (Ommaviy):")
 	fmt.Println("   GET /api/shops/{slug} - Do'kon sahifasi")
+	fmt.Println("")
+	fmt.Println("🔌 WebSocket (Real-time):")
+	fmt.Println("   WS /ws/orders?token=JWT&shop_id=UUID - Real-time buyurtmalar")
 	fmt.Println("")
 	fmt.Println("📁 Static files: /uploads/*")
 	fmt.Printf("📚 Swagger UI: http://localhost:%s/swagger/index.html\n", serverPort)
