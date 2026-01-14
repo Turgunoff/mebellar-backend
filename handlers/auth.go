@@ -653,9 +653,21 @@ func ForgotPassword(db *sql.DB) http.HandlerFunc {
 			CreatedAt: time.Now(),
 		}
 
-		// MOCK SMS - konsolga chiqarish (logda ham ko'rinadi)
-		log.Printf("📱 [PASSWORD RESET OTP] to %s: %s", req.Phone, code)
-		fmt.Printf("📱 MOCK SMS (Password Reset) to %s: Verification code to log in to the Edumate platform: %s. n8SDK1tHd\n", req.Phone, code)
+		// SMS yuborish
+		if smsService != nil {
+			// Real SMS yuborish (Eskiz.uz orqali)
+			go func(phone, otpCode string) {
+				if err := smsService.SendOTP(phone, otpCode); err != nil {
+					log.Printf("❌ SMS yuborishda xatolik: %v", err)
+					// Fallback - konsolga chiqarish
+					fmt.Printf("📱 FALLBACK SMS to %s: Verification code to log in to the Edumate platform: %s. n8SDK1tHd\n", phone, otpCode)
+				}
+			}(req.Phone, code)
+		} else {
+			// Development mode - MOCK SMS
+			log.Printf("📱 [PASSWORD RESET OTP] to %s: %s", req.Phone, code)
+			fmt.Printf("📱 MOCK SMS (Password Reset) to %s: Verification code to log in to the Edumate platform: %s. n8SDK1tHd\n", req.Phone, code)
+		}
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
