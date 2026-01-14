@@ -251,7 +251,7 @@ func (e *EskizService) sendSMSWithToken(phone, message, token string) error {
 
 // SendOTP - OTP kod yuborish (formatlangan xabar bilan)
 func (e *EskizService) SendOTP(phone, code string) error {
-	message := fmt.Sprintf("Mebellar Olami: Tasdiqlash kodi - %s. Kodni hech kimga bermang!", code)
+	message := fmt.Sprintf("Verification code to log in to the Edumate platform: %s. n8SDK1tHd", code)
 	return e.SendSMS(phone, message)
 }
 

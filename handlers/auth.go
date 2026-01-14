@@ -171,13 +171,13 @@ func SendOTP(db *sql.DB) http.HandlerFunc {
 				if err := smsService.SendOTP(phone, otpCode); err != nil {
 					log.Printf("❌ SMS yuborishda xatolik: %v", err)
 					// Fallback - konsolga chiqarish
-					fmt.Printf("📱 FALLBACK SMS to %s: %s\n", phone, otpCode)
+					fmt.Printf("📱 FALLBACK SMS to %s: Verification code to log in to the Edumate platform: %s. n8SDK1tHd\n", phone, otpCode)
 				}
 			}(req.Phone, code)
 		} else {
 			// Development mode - MOCK SMS
 			log.Printf("📱 [REGISTRATION OTP] to %s: %s", req.Phone, code)
-			fmt.Printf("📱 MOCK SMS to %s: %s\n", req.Phone, code)
+			fmt.Printf("📱 MOCK SMS to %s: Verification code to log in to the Edumate platform: %s. n8SDK1tHd\n", req.Phone, code)
 		}
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
@@ -655,7 +655,7 @@ func ForgotPassword(db *sql.DB) http.HandlerFunc {
 
 		// MOCK SMS - konsolga chiqarish (logda ham ko'rinadi)
 		log.Printf("📱 [PASSWORD RESET OTP] to %s: %s", req.Phone, code)
-		fmt.Printf("📱 MOCK SMS (Password Reset) to %s: %s\n", req.Phone, code)
+		fmt.Printf("📱 MOCK SMS (Password Reset) to %s: Verification code to log in to the Edumate platform: %s. n8SDK1tHd\n", req.Phone, code)
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
