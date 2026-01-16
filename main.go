@@ -357,6 +357,7 @@ func createUsersTable(db *sql.DB) {
 	addColumnIfNotExists(db, "users", "avatar_url", "VARCHAR(500)")
 	addColumnIfNotExists(db, "users", "is_active", "BOOLEAN DEFAULT TRUE")
 	addColumnIfNotExists(db, "users", "role", "VARCHAR(50) DEFAULT 'customer'")
+	addColumnIfNotExists(db, "users", "onesignal_id", "VARCHAR(255)")
 
 	// Seller Profiles jadvalini yaratish
 	createSellerProfilesTable(db)

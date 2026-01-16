@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"mebellar-backend/models"
+	"mebellar-backend/pkg/notification"
 	"mebellar-backend/pkg/websocket"
 )
 
@@ -721,6 +722,46 @@ func CreateOrder(db *sql.DB) http.HandlerFunc {
 			ProductImage: orderItems[0].ProductImage,
 			CreatedAt:    now.Format("02.01.2006 15:04"),
 		})
+
+		// 📱 Send push notification to seller via OneSignal (async)
+		go func() {
+			// Get seller user_id from shop_id
+			var sellerUserID string
+			err := db.QueryRow(`SELECT user_id FROM seller_profiles WHERE id = $1`, req.ShopID).Scan(&sellerUserID)
+			if err != nil {
+				log.Printf("⚠️ OneSignal: Seller user_id topilmadi (shop: %s): %v", req.ShopID, err)
+				return
+			}
+
+			// Get seller's OneSignal ID
+			var oneSignalID string
+			err = db.QueryRow(`SELECT COALESCE(onesignal_id, '') FROM users WHERE id = $1`, sellerUserID).Scan(&oneSignalID)
+			if err != nil {
+				log.Printf("⚠️ OneSignal: User topilmadi (user_id: %s): %v", sellerUserID, err)
+				return
+			}
+
+			if oneSignalID == "" {
+				log.Printf("⚠️ OneSignal: Seller'da onesignal_id yo'q (user_id: %s)", sellerUserID)
+				return
+			}
+
+			// Send notification
+			notifService := notification.NewOneSignalService()
+			title := "Yangi buyurtma"
+			content := fmt.Sprintf("%s - %.0f so'm", req.ClientName, totalAmount)
+			data := map[string]interface{}{
+				"type":      "new_order",
+				"order_id":  orderID,
+				"shop_id":   req.ShopID,
+				"client_name": req.ClientName,
+				"total_amount": totalAmount,
+			}
+
+			if err := notifService.SendNotification(oneSignalID, title, content, data); err != nil {
+				log.Printf("⚠️ OneSignal: Notification yuborishda xatolik: %v", err)
+			}
+		}()
 
 		log.Printf("✅ Yangi buyurtma yaratildi: %s (shop: %s, total: %.0f)", orderID, req.ShopID, totalAmount)
 

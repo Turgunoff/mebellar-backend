@@ -156,9 +156,9 @@ func GetProfile(db *sql.DB) http.HandlerFunc {
 		// Bazadan foydalanuvchini olish
 		var user models.User
 		err := db.QueryRow(`
-			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), COALESCE(onesignal_id, ''), created_at, updated_at
 			FROM users WHERE id = $1
-		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.OneSignalID, &user.CreatedAt, &user.UpdatedAt)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -234,6 +234,7 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 
 		// Form fieldlarini olish
 		fullName := r.FormValue("full_name")
+		oneSignalID := r.FormValue("onesignal_id")
 
 		// Avatar faylini tekshirish
 		var avatarURL *string
@@ -287,23 +288,38 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 		// SQL so'rov yaratish
 		var query string
 		var args []interface{}
+		updateFields := []string{}
+		argIndex := 1
 
-		if fullName != "" && avatarURL != nil {
-			query = `UPDATE users SET full_name = $1, avatar_url = $2, updated_at = NOW() WHERE id = $3`
-			args = []interface{}{fullName, *avatarURL, userID}
-		} else if fullName != "" {
-			query = `UPDATE users SET full_name = $1, updated_at = NOW() WHERE id = $2`
-			args = []interface{}{fullName, userID}
-		} else if avatarURL != nil {
-			query = `UPDATE users SET avatar_url = $1, updated_at = NOW() WHERE id = $2`
-			args = []interface{}{*avatarURL, userID}
-		} else {
+		if fullName != "" {
+			updateFields = append(updateFields, fmt.Sprintf("full_name = $%d", argIndex))
+			args = append(args, fullName)
+			argIndex++
+		}
+
+		if avatarURL != nil {
+			updateFields = append(updateFields, fmt.Sprintf("avatar_url = $%d", argIndex))
+			args = append(args, *avatarURL)
+			argIndex++
+		}
+
+		if oneSignalID != "" {
+			updateFields = append(updateFields, fmt.Sprintf("onesignal_id = $%d", argIndex))
+			args = append(args, oneSignalID)
+			argIndex++
+		}
+
+		if len(updateFields) == 0 {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Hech narsa o'zgartirilmadi",
 			})
 			return
 		}
+
+		updateFields = append(updateFields, fmt.Sprintf("updated_at = NOW()"))
+		args = append(args, userID)
+		query = fmt.Sprintf("UPDATE users SET %s WHERE id = $%d", strings.Join(updateFields, ", "), argIndex)
 
 		// Profilni yangilash
 		_, err = db.Exec(query, args...)
@@ -319,9 +335,9 @@ func UpdateProfile(db *sql.DB) http.HandlerFunc {
 		// Yangilangan profilni qaytarish
 		var user models.User
 		err = db.QueryRow(`
-			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), COALESCE(onesignal_id, ''), created_at, updated_at
 			FROM users WHERE id = $1
-		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.CreatedAt, &user.UpdatedAt)
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.OneSignalID, &user.CreatedAt, &user.UpdatedAt)
 
 		if err != nil {
 			log.Printf("Profile fetch xatosi: %v", err)

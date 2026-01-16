@@ -10,6 +10,7 @@ type User struct {
 	Email        string    `json:"email,omitempty"`      // COALESCE bilan bo'sh string qaytadi
 	AvatarURL    string    `json:"avatar_url,omitempty"` // COALESCE bilan bo'sh string qaytadi
 	Role         string    `json:"role"`                 // customer, seller, admin
+	OneSignalID  string    `json:"onesignal_id,omitempty"` // OneSignal Player ID for push notifications
 	PasswordHash string    `json:"-"`                    // JSON'da ko'rsatilmasin
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
