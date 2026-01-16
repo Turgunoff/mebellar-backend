@@ -123,6 +123,7 @@ func GetSellerOrders(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Get orders
+		// Add limit and offset to args for data query
 		args = append(args, limit, offset)
 		rows, err := db.Query(dataQuery, args...)
 		if err != nil {
@@ -561,6 +562,251 @@ func SeedOrders(db *sql.DB) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, models.AuthResponse{
 			Success: true,
 			Message: fmt.Sprintf("%d ta test buyurtma muvaffaqiyatli yaratildi", createdCount),
+		})
+	}
+}
+
+// ============================================
+// CUSTOMER ORDERS HANDLER (GET history / POST create)
+// ============================================
+
+// CustomerOrdersHandler - Handles both GET (order history) and POST (create order)
+func CustomerOrdersHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			// Use JWT middleware for GET requests
+			JWTMiddleware(db, GetCustomerOrders(db))(w, r)
+		} else if r.Method == http.MethodPost {
+			// Public endpoint for POST (create order)
+			CreateOrder(db)(w, r)
+		} else {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET yoki POST metodi qo'llab-quvvatlanadi",
+			})
+		}
+	}
+}
+
+// GetCustomerOrders godoc
+// @Summary      Mijoz buyurtmalarini olish
+// @Description  JWT token orqali autentifikatsiya qilingan mijozning barcha buyurtmalarini qaytaradi
+// @Tags         orders
+// @Accept       json
+// @Produce      json
+// @Param        status query string false "Status filter (new, confirmed, shipping, completed, cancelled)"
+// @Param        page query int false "Sahifa raqami (default: 1)"
+// @Param        limit query int false "Har sahifadagi buyurtmalar soni (default: 20)"
+// @Success      200  {object}  models.OrdersResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /orders [get]
+func GetCustomerOrders(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Get user_id from JWT middleware
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Tizimga kirish talab etiladi",
+			})
+			return
+		}
+
+		// Get user's phone from users table
+		var userPhone string
+		err := db.QueryRow("SELECT phone FROM users WHERE id = $1", userID).Scan(&userPhone)
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("GetCustomerOrders: User query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Xatolik yuz berdi",
+			})
+			return
+		}
+
+		// Parse query params
+		pageStr := r.URL.Query().Get("page")
+		limitStr := r.URL.Query().Get("limit")
+		statusFilter := r.URL.Query().Get("status")
+
+		page := 1
+		limit := 20
+
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 50 {
+			limit = l
+		}
+
+		offset := (page - 1) * limit
+
+		// Build query
+		countQuery := `SELECT COUNT(*) FROM orders WHERE client_phone = $1`
+		dataQuery := `
+			SELECT 
+				id, shop_id, client_name, client_phone, client_address,
+				total_amount, delivery_price, status,
+				client_note, seller_note,
+				created_at, updated_at, completed_at
+			FROM orders 
+			WHERE client_phone = $1
+		`
+
+		args := []interface{}{userPhone}
+		argIndex := 2
+
+		// Filter by status
+		if statusFilter != "" {
+			// Support multiple statuses (comma-separated)
+			statuses := strings.Split(statusFilter, ",")
+			if len(statuses) == 1 {
+				countQuery += fmt.Sprintf(" AND status = $%d", argIndex)
+				dataQuery += fmt.Sprintf(" AND status = $%d", argIndex)
+				args = append(args, statusFilter)
+				argIndex++
+			} else {
+				placeholders := make([]string, len(statuses))
+				for i, s := range statuses {
+					placeholders[i] = fmt.Sprintf("$%d", argIndex)
+					args = append(args, strings.TrimSpace(s))
+					argIndex++
+				}
+				countQuery += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
+				dataQuery += fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
+			}
+		}
+
+		dataQuery += ` ORDER BY created_at DESC LIMIT $` + string(rune('0'+argIndex)) + ` OFFSET $` + string(rune('0'+argIndex+1))
+		
+		// Get total count (without limit/offset)
+		countArgs := args[:len(args)-2] // Remove limit and offset from args
+		var total int
+		err = db.QueryRow(countQuery, countArgs...).Scan(&total)
+		if err != nil {
+			log.Printf("GetCustomerOrders: Count query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtmalarni olishda xatolik",
+			})
+			return
+		}
+
+		// Get orders
+		rows, err := db.Query(dataQuery, args...)
+		if err != nil {
+			log.Printf("GetCustomerOrders: Orders query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtmalarni olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		orders := []models.Order{}
+		for rows.Next() {
+			var o models.Order
+			var clientAddress sql.NullString
+			var deliveryPrice sql.NullFloat64
+			var clientNote sql.NullString
+			var sellerNote sql.NullString
+			var updatedAt sql.NullTime
+			var completedAt sql.NullTime
+
+			err := rows.Scan(
+				&o.ID, &o.ShopID, &o.ClientName, &o.ClientPhone, &clientAddress,
+				&o.TotalAmount, &deliveryPrice, &o.Status,
+				&clientNote, &sellerNote,
+				&o.CreatedAt, &updatedAt, &completedAt,
+			)
+			if err != nil {
+				log.Printf("GetCustomerOrders: Scan xatosi: %v", err)
+				continue
+			}
+
+			if clientAddress.Valid {
+				o.ClientAddress = clientAddress.String
+			}
+			if deliveryPrice.Valid {
+				o.DeliveryPrice = deliveryPrice.Float64
+			}
+			if clientNote.Valid {
+				o.ClientNote = clientNote.String
+			}
+			if sellerNote.Valid {
+				o.SellerNote = sellerNote.String
+			}
+			if updatedAt.Valid {
+				o.UpdatedAt = updatedAt.Time
+			}
+			if completedAt.Valid {
+				o.CompletedAt = &completedAt.Time
+			}
+
+			// Get order items
+			itemsQuery := `
+				SELECT id, order_id, product_id, product_name, product_image, quantity, price, created_at
+				FROM order_items
+				WHERE order_id = $1
+				ORDER BY created_at ASC
+			`
+			itemRows, err := db.Query(itemsQuery, o.ID)
+			if err != nil {
+				log.Printf("GetCustomerOrders: Items query xatosi: %v", err)
+				continue
+			}
+
+			items := []models.OrderItem{}
+			for itemRows.Next() {
+				var item models.OrderItem
+				var productID sql.NullString
+				err := itemRows.Scan(
+					&item.ID, &item.OrderID, &productID, &item.ProductName, &item.ProductImage,
+					&item.Quantity, &item.Price, &item.CreatedAt,
+				)
+				if err != nil {
+					log.Printf("GetCustomerOrders: Item scan xatosi: %v", err)
+					continue
+				}
+				if productID.Valid {
+					item.ProductID = &productID.String
+				}
+				items = append(items, item)
+			}
+			itemRows.Close()
+
+			o.Items = items
+			o.ItemsCount = len(items)
+			orders = append(orders, o)
+		}
+
+		log.Printf("✅ %d ta mijoz buyurtmasi topildi (user_id: %s, phone: %s)", len(orders), userID, userPhone)
+
+		writeJSON(w, http.StatusOK, models.OrdersResponse{
+			Success: true,
+			Orders:  orders,
+			Total:   total,
+			Page:    page,
+			Limit:   limit,
 		})
 	}
 }

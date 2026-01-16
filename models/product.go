@@ -131,6 +131,7 @@ func (d *DeliverySettings) GetRegionPrice(regionID string) RegionSettings {
 // @Description Mahsulot ma'lumotlari
 type Product struct {
 	ID               string           `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	ShopID           string           `json:"shop_id" example:"550e8400-e29b-41d4-a716-446655440002"`
 	CategoryID       *string          `json:"category_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
 	Name             string           `json:"name" example:"Premium Divan"`
 	Description      string           `json:"description" example:"Zamonaviy dizayndagi divan"`

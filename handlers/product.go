@@ -49,7 +49,7 @@ func GetProducts(db *sql.DB) http.HandlerFunc {
 		// SQL so'rov yaratish
 		query := `
 			SELECT 
-				id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, name, description, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -160,7 +160,7 @@ func GetProductByID(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT 
-				id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, name, description, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -170,7 +170,7 @@ func GetProductByID(db *sql.DB) http.HandlerFunc {
 
 		var p models.Product
 		err := db.QueryRow(query, productID).Scan(
-			&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+			&p.ID, &p.ShopID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
 			&p.Images, &p.Specs, &p.Variants,
 			&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 		)
@@ -222,7 +222,7 @@ func GetNewArrivals(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT 
-				id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, name, description, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -247,7 +247,7 @@ func GetNewArrivals(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var p models.Product
 			err := rows.Scan(
-				&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.ID, &p.ShopID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 			)
@@ -290,7 +290,7 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT 
-				id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, name, description, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -315,7 +315,7 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var p models.Product
 			err := rows.Scan(
-				&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.ID, &p.ShopID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 			)

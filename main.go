@@ -188,10 +188,11 @@ func main() {
 	http.HandleFunc("/api/seller/products/", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db))))
 
 	// ============================================
-	// CUSTOMER ORDERS ENDPOINTS (Public)
+	// CUSTOMER ORDERS ENDPOINTS
 	// ============================================
-	// Yangi buyurtma yaratish (Customer App)
-	http.HandleFunc("/api/orders", corsMiddleware(handlers.CreateOrder(db)))
+	// GET /api/orders - Mijoz buyurtmalari ro'yxati (JWT talab qiladi)
+	// POST /api/orders - Yangi buyurtma yaratish (Public)
+	http.HandleFunc("/api/orders", corsMiddleware(handlers.CustomerOrdersHandler(db)))
 
 	// ============================================
 	// SELLER ORDERS ENDPOINTS
@@ -294,8 +295,9 @@ func main() {
 	fmt.Println("   PUT    /api/seller/shops/{id} - Do'konni yangilash")
 	fmt.Println("   DELETE /api/seller/shops/{id} - Do'konni o'chirish")
 	fmt.Println("")
-	fmt.Println("🛒 Orders (Customer App - Ommaviy):")
-	fmt.Println("   POST /api/orders - Yangi buyurtma yaratish (WebSocket broadcast)")
+	fmt.Println("🛒 Orders (Customer App):")
+	fmt.Println("   GET  /api/orders - Mijoz buyurtmalari ro'yxati (JWT talab qiladi)")
+	fmt.Println("   POST /api/orders - Yangi buyurtma yaratish (Ommaviy, WebSocket broadcast)")
 	fmt.Println("")
 	fmt.Println("📦 Seller Orders (JWT himoyalangan):")
 	fmt.Println("   GET  /api/seller/orders        - Buyurtmalar ro'yxati (?status=new)")
