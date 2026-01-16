@@ -422,11 +422,37 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Validate price range (DECIMAL(15,2) max: 9999999999999.99)
+		const maxPrice = 9999999999999.99
+		if price > maxPrice {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: fmt.Sprintf("Narx juda katta. Maksimal qiymat: %.2f", maxPrice),
+			})
+			return
+		}
+
 		// Parse optional fields
 		var discountPrice *float64
 		if discountPriceStr != "" {
 			dp, err := strconv.ParseFloat(discountPriceStr, 64)
 			if err == nil && dp > 0 {
+				// Validate discount price range
+				if dp > maxPrice {
+					writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+						Success: false,
+						Message: fmt.Sprintf("Chegirma narxi juda katta. Maksimal qiymat: %.2f", maxPrice),
+					})
+					return
+				}
+				// Discount price should be less than regular price
+				if dp >= price {
+					writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+						Success: false,
+						Message: "Chegirma narxi oddiy narxdan kichik bo'lishi kerak",
+					})
+					return
+				}
 				discountPrice = &dp
 			}
 		}
@@ -457,6 +483,40 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 				log.Printf("DeliverySettings JSON parse xatosi: %v", err)
 				deliverySettings = models.DeliverySettings{
 					Default: models.RegionSettings{DeliveryDays: "3-5"},
+				}
+			} else {
+				// Validate delivery settings prices (DECIMAL(15,2) max: 9999999999999.99)
+				const maxDeliveryPrice = 9999999999999.99
+				if deliverySettings.Default.DeliveryPrice > maxDeliveryPrice {
+					writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+						Success: false,
+						Message: fmt.Sprintf("Yetkazib berish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
+					})
+					return
+				}
+				if deliverySettings.Default.InstallationPrice > maxDeliveryPrice {
+					writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+						Success: false,
+						Message: fmt.Sprintf("O'rnatish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
+					})
+					return
+				}
+				// Validate overrides
+				for _, override := range deliverySettings.Overrides {
+					if override.DeliveryPrice > maxDeliveryPrice {
+						writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+							Success: false,
+							Message: fmt.Sprintf("Hudud uchun yetkazib berish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
+						})
+						return
+					}
+					if override.InstallationPrice > maxDeliveryPrice {
+						writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+							Success: false,
+							Message: fmt.Sprintf("Hudud uchun o'rnatish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
+						})
+						return
+					}
 				}
 			}
 		}
