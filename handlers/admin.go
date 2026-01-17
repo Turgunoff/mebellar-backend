@@ -2,8 +2,11 @@ package handlers
 
 import (
 	"database/sql"
+	"fmt"
+	"log"
 	"mebellar-backend/models"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -133,6 +136,141 @@ func GetAdminDashboardStats(db *sql.DB) http.HandlerFunc {
 		writeJSON(w, http.StatusOK, AdminDashboardStatsResponse{
 			Success: true,
 			Data:    stats,
+		})
+	}
+}
+
+// UsersResponse - Foydalanuvchilar ro'yxati javobi
+type UsersResponse struct {
+	Success bool         `json:"success"`
+	Message string       `json:"message,omitempty"`
+	Users   []models.User `json:"users"`
+	Total   int          `json:"total"`
+	Page    int          `json:"page,omitempty"`
+	Limit   int          `json:"limit,omitempty"`
+}
+
+// GetUsers godoc
+// @Summary      Barcha foydalanuvchilarni olish (Admin)
+// @Description  Admin panel uchun barcha foydalanuvchilar ro'yxatini qaytaradi
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        page query int false "Sahifa raqami (default: 1)"
+// @Param        limit query int false "Har sahifadagi foydalanuvchilar soni (default: 10, max: 100)"
+// @Param        role query string false "Role bo'yicha filter (customer, seller, admin, moderator)"
+// @Success      200  {object}  UsersResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /admin/users [get]
+func GetUsers(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// User ID va Role middleware dan olingan
+		userRole := r.Header.Get("X-User-Role")
+		if userRole != "admin" && userRole != "moderator" {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu sahifaga kirish huquqingiz yo'q",
+			})
+			return
+		}
+
+		// Query parametrlarini olish
+		pageStr := r.URL.Query().Get("page")
+		limitStr := r.URL.Query().Get("limit")
+		roleFilter := r.URL.Query().Get("role")
+
+		// Pagination sozlash
+		page := 1
+		limit := 10
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+		offset := (page - 1) * limit
+
+		// SQL so'rov yaratish
+		// Barcha foydalanuvchilarni olish (password_hash ni o'zgartirmaslik)
+		baseQuery := `
+			SELECT 
+				id, full_name, phone, COALESCE(email, ''), 
+				COALESCE(avatar_url, ''), COALESCE(role, 'customer'),
+				COALESCE(onesignal_id, ''), created_at, updated_at
+			FROM users
+			WHERE is_active = true
+		`
+		countQuery := `SELECT COUNT(*) FROM users WHERE is_active = true`
+		args := []interface{}{}
+		argIndex := 1
+
+		// Role filtri
+		if roleFilter != "" {
+			baseQuery += fmt.Sprintf(" AND COALESCE(role, 'customer') = $%d", argIndex)
+			countQuery += fmt.Sprintf(" AND COALESCE(role, 'customer') = $%d", argIndex)
+			args = append(args, roleFilter)
+			argIndex++
+		}
+
+		// Jami sonni olish
+		var total int
+		err := db.QueryRow(countQuery, args...).Scan(&total)
+		if err != nil {
+			log.Printf("GetUsers: Count query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchilarni olishda xatolik",
+			})
+			return
+		}
+
+		// Foydalanuvchilarni olish (pagination bilan)
+		dataQuery := baseQuery + ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(argIndex) + ` OFFSET $` + strconv.Itoa(argIndex+1)
+		args = append(args, limit, offset)
+
+		rows, err := db.Query(dataQuery, args...)
+		if err != nil {
+			log.Printf("GetUsers: Users query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchilarni olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		users := []models.User{}
+		for rows.Next() {
+			var u models.User
+			err := rows.Scan(
+				&u.ID, &u.FullName, &u.Phone, &u.Email, &u.AvatarURL,
+				&u.Role, &u.OneSignalID, &u.CreatedAt, &u.UpdatedAt,
+			)
+			if err != nil {
+				log.Printf("GetUsers: User scan xatosi: %v", err)
+				continue
+			}
+			users = append(users, u)
+		}
+
+		log.Printf("✅ %d ta foydalanuvchi topildi (sahifa %d)", len(users), page)
+
+		writeJSON(w, http.StatusOK, UsersResponse{
+			Success: true,
+			Users:   users,
+			Total:   total,
+			Page:    page,
+			Limit:   limit,
 		})
 	}
 }
