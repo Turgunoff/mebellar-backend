@@ -4,6 +4,7 @@ go 1.23.4
 
 require (
 	github.com/golang-jwt/jwt/v5 v5.2.1
+	github.com/google/generative-ai-go/genai v0.15.0
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/joho/godotenv v1.5.1
@@ -11,6 +12,7 @@ require (
 	github.com/swaggo/http-swagger v1.3.4
 	github.com/swaggo/swag v1.16.4
 	golang.org/x/crypto v0.28.0
+	google.golang.org/api v0.183.0
 )
 
 require (

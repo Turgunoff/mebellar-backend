@@ -16,6 +16,32 @@ import (
 // JSONB - PostgreSQL JSONB maydoni uchun custom type
 type JSONB map[string]interface{}
 
+// StringMap - PostgreSQL JSONB uchun map[string]string type (name, description uchun)
+type StringMap map[string]string
+
+// Value - database ga yozish uchun
+func (s StringMap) Value() (driver.Value, error) {
+	if s == nil {
+		return nil, nil
+	}
+	return json.Marshal(s)
+}
+
+// Scan - database dan o'qish uchun
+func (s *StringMap) Scan(value interface{}) error {
+	if value == nil {
+		*s = nil
+		return nil
+	}
+
+	bytes, ok := value.([]byte)
+	if !ok {
+		return errors.New("type assertion to []byte failed for StringMap")
+	}
+
+	return json.Unmarshal(bytes, s)
+}
+
 // Value - database ga yozish uchun
 func (j JSONB) Value() (driver.Value, error) {
 	if j == nil {
@@ -133,8 +159,8 @@ type Product struct {
 	ID               string           `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ShopID           string           `json:"shop_id" example:"550e8400-e29b-41d4-a716-446655440002"`
 	CategoryID       *string          `json:"category_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Name             string           `json:"name" example:"Premium Divan"`
-	Description      string           `json:"description" example:"Zamonaviy dizayndagi divan"`
+	Name             StringMap        `json:"name" swaggertype:"object" example:"{\"uz\":\"Premium Divan\",\"ru\":\"Премиум Диван\",\"en\":\"Premium Sofa\"}"`
+	Description      StringMap        `json:"description" swaggertype:"object" example:"{\"uz\":\"Zamonaviy dizayndagi divan\",\"ru\":\"Диван современного дизайна\",\"en\":\"Modern design sofa\"}"`
 	Price            float64          `json:"price" example:"5500000"`
 	DiscountPrice    *float64         `json:"discount_price,omitempty" example:"4400000"`
 	Images           pq.StringArray   `json:"images" swaggertype:"array,string" example:"https://example.com/img1.jpg,https://example.com/img2.jpg"`

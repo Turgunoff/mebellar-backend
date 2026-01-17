@@ -24,6 +24,9 @@ type Config struct {
 	// JWT
 	JWTSecret string
 
+	// Gemini AI
+	GeminiAPIKey string
+
 	// Environment
 	Environment string // "development", "production"
 }
@@ -47,6 +50,9 @@ func LoadConfig() *Config {
 
 		// JWT
 		JWTSecret: getEnv("JWT_SECRET", "your-secret-key"),
+
+		// Gemini AI
+		GeminiAPIKey: getEnv("GEMINI_API_KEY", ""),
 
 		// Environment
 		Environment: getEnv("ENVIRONMENT", "development"),
