@@ -156,6 +156,14 @@ func main() {
 	http.HandleFunc("/api/admin/categories/list", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminCategories(db)))
 	http.HandleFunc("/api/admin/categories", handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db)))
 	http.HandleFunc("/api/admin/categories/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db)))
+	
+	// --- Admin Sellers Management ---
+	http.HandleFunc("/api/admin/sellers", handlers.RequireRole(db, "admin", "moderator")(handlers.GetSellers(db)))
+	http.HandleFunc("/api/admin/sellers/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminSellerHandler(db)))
+	
+	// --- Admin Shops Management ---
+	http.HandleFunc("/api/admin/shops", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminShopsHandler(db)))
+	http.HandleFunc("/api/admin/shops/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminShopItemHandler(db)))
 
 	// --- WebSocket ---
 	http.HandleFunc("/ws/orders", websocket.HandleWebSocket(db))

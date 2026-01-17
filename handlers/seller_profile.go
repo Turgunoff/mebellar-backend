@@ -470,7 +470,7 @@ func GetMyShops(db *sql.DB) http.HandlerFunc {
 			SELECT 
 				id, user_id, shop_name, COALESCE(slug, ''), COALESCE(description, ''),
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
-				COALESCE(support_phone, ''), COALESCE(address, ''),
+				COALESCE(support_phone, ''), COALESCE(address::text, '{}')::jsonb,
 				latitude, longitude,
 				COALESCE(social_links::text, '{}')::jsonb,
 				COALESCE(working_hours::text, '{}')::jsonb,
@@ -494,14 +494,18 @@ func GetMyShops(db *sql.DB) http.HandlerFunc {
 		var shops []models.SellerProfile
 		for rows.Next() {
 			var shop models.SellerProfile
+			var addressJSONB models.StringMap
 			err := rows.Scan(
 				&shop.ID, &shop.UserID, &shop.ShopName, &shop.Slug, &shop.Description,
 				&shop.LogoURL, &shop.BannerURL,
-				&shop.SupportPhone, &shop.Address,
+				&shop.SupportPhone, &addressJSONB,
 				&shop.Latitude, &shop.Longitude,
 				&shop.SocialLinks, &shop.WorkingHours,
 				&shop.IsVerified, &shop.Rating, &shop.CreatedAt, &shop.UpdatedAt,
 			)
+			if err == nil {
+				shop.Address = addressJSONB
+			}
 			if err != nil {
 				log.Printf("GetMyShops scan error: %v", err)
 				continue
@@ -585,9 +589,18 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		// Social links va working hours ni JSON ga aylantirish
 		socialLinksJSON, _ := json.Marshal(req.SocialLinks)
 		workingHoursJSON, _ := json.Marshal(req.WorkingHours)
+		
+		// Address ni JSONB ga aylantirish
+		var addressValue []byte
+		if req.Address != nil {
+			addressValue, _ = req.Address.Value()
+		} else {
+			addressValue = []byte("{}")
+		}
 
 		// Do'konni yaratish
 		var shop models.SellerProfile
+		var addressJSONB models.StringMap
 		query := `
 			INSERT INTO seller_profiles (
 				user_id, shop_name, slug, description,
@@ -595,7 +608,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 			RETURNING id, user_id, shop_name, slug, COALESCE(description, ''),
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
-				COALESCE(support_phone, ''), COALESCE(address, ''),
+				COALESCE(support_phone, ''), COALESCE(address::text, '{}')::jsonb,
 				latitude, longitude,
 				COALESCE(social_links::text, '{}')::jsonb,
 				COALESCE(working_hours::text, '{}')::jsonb,
@@ -605,15 +618,18 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		err := db.QueryRow(
 			query,
 			userID, req.ShopName, slug, req.Description,
-			req.SupportPhone, req.Address, socialLinksJSON, workingHoursJSON,
+			req.SupportPhone, addressValue, socialLinksJSON, workingHoursJSON,
 		).Scan(
 			&shop.ID, &shop.UserID, &shop.ShopName, &shop.Slug, &shop.Description,
 			&shop.LogoURL, &shop.BannerURL,
-			&shop.SupportPhone, &shop.Address,
+			&shop.SupportPhone, &addressJSONB,
 			&shop.Latitude, &shop.Longitude,
 			&shop.SocialLinks, &shop.WorkingHours,
 			&shop.IsVerified, &shop.Rating, &shop.CreatedAt, &shop.UpdatedAt,
 		)
+		if err == nil {
+			shop.Address = addressJSONB
+		}
 
 		if err != nil {
 			log.Printf("CreateShop error: %v", err)
@@ -678,13 +694,14 @@ func GetShopByID(db *sql.DB) http.HandlerFunc {
 		}
 
 		var shop models.SellerProfile
+		var addressJSONB models.StringMap
 		query := `
 			SELECT 
 				id, user_id, shop_name, COALESCE(slug, ''), COALESCE(description, ''),
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
 				COALESCE(legal_name, ''), COALESCE(tax_id, ''),
 				COALESCE(bank_account, ''), COALESCE(bank_name, ''),
-				COALESCE(support_phone, ''), COALESCE(address, ''),
+				COALESCE(support_phone, ''), COALESCE(address::text, '{}')::jsonb,
 				latitude, longitude,
 				COALESCE(social_links::text, '{}')::jsonb,
 				COALESCE(working_hours::text, '{}')::jsonb,
@@ -698,11 +715,14 @@ func GetShopByID(db *sql.DB) http.HandlerFunc {
 			&shop.LogoURL, &shop.BannerURL,
 			&shop.LegalName, &shop.TaxID,
 			&shop.BankAccount, &shop.BankName,
-			&shop.SupportPhone, &shop.Address,
+			&shop.SupportPhone, &addressJSONB,
 			&shop.Latitude, &shop.Longitude,
 			&shop.SocialLinks, &shop.WorkingHours,
 			&shop.IsVerified, &shop.Rating, &shop.CreatedAt, &shop.UpdatedAt,
 		)
+		if err == nil {
+			shop.Address = addressJSONB
+		}
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -839,8 +859,9 @@ func UpdateShop(db *sql.DB) http.HandlerFunc {
 			argIndex++
 		}
 		if req.Address != nil {
+			addressValue, _ := req.Address.Value()
 			updates = append(updates, "address = $"+string(rune('0'+argIndex)))
-			args = append(args, *req.Address)
+			args = append(args, addressValue)
 			argIndex++
 		}
 		if req.Latitude != nil {
@@ -1016,11 +1037,12 @@ func GetPublicShopBySlug(db *sql.DB) http.HandlerFunc {
 		}
 
 		var shop models.SellerProfile
+		var addressJSONB models.StringMap
 		query := `
 			SELECT 
 				id, user_id, shop_name, COALESCE(slug, ''), COALESCE(description, ''),
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
-				COALESCE(support_phone, ''), COALESCE(address, ''),
+				COALESCE(support_phone, ''), COALESCE(address::text, '{}')::jsonb,
 				latitude, longitude,
 				COALESCE(social_links::text, '{}')::jsonb,
 				COALESCE(working_hours::text, '{}')::jsonb,
@@ -1032,11 +1054,14 @@ func GetPublicShopBySlug(db *sql.DB) http.HandlerFunc {
 		err := db.QueryRow(query, slug).Scan(
 			&shop.ID, &shop.UserID, &shop.ShopName, &shop.Slug, &shop.Description,
 			&shop.LogoURL, &shop.BannerURL,
-			&shop.SupportPhone, &shop.Address,
+			&shop.SupportPhone, &addressJSONB,
 			&shop.Latitude, &shop.Longitude,
 			&shop.SocialLinks, &shop.WorkingHours,
 			&shop.IsVerified, &shop.Rating,
 		)
+		if err == nil {
+			shop.Address = addressJSONB
+		}
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{

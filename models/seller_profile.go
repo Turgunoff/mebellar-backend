@@ -96,7 +96,7 @@ type SellerProfile struct {
 
 	// Aloqa va joylashuv
 	SupportPhone string   `json:"support_phone,omitempty" example:"+998901234567"`
-	Address      string   `json:"address,omitempty" example:"Toshkent, Chilonzor tumani"`
+	Address      StringMap `json:"address,omitempty" swaggertype:"object" example:"{\"uz\":\"Toshkent, Chilonzor tumani\",\"ru\":\"Ташкент, Чилонзор район\",\"en\":\"Tashkent, Chilonzor district\"}"`
 	Latitude     *float64 `json:"latitude,omitempty" example:"41.311081"`
 	Longitude    *float64 `json:"longitude,omitempty" example:"69.240562"`
 
@@ -122,7 +122,7 @@ type CreateSellerProfileRequest struct {
 	ShopName     string       `json:"shop_name" binding:"required"`
 	Description  string       `json:"description,omitempty"`
 	SupportPhone string       `json:"support_phone,omitempty"`
-	Address      string       `json:"address,omitempty"`
+	Address      *StringMap   `json:"address,omitempty"`
 	SocialLinks  SocialLinks  `json:"social_links,omitempty"`
 	WorkingHours WorkingHours `json:"working_hours,omitempty"`
 }
@@ -134,7 +134,7 @@ type UpdateSellerProfileRequest struct {
 	LogoURL      *string       `json:"logo_url,omitempty"`
 	BannerURL    *string       `json:"banner_url,omitempty"`
 	SupportPhone *string       `json:"support_phone,omitempty"`
-	Address      *string       `json:"address,omitempty"`
+	Address      *StringMap    `json:"address,omitempty"`
 	Latitude     *float64      `json:"latitude,omitempty"`
 	Longitude    *float64      `json:"longitude,omitempty"`
 	SocialLinks  *SocialLinks  `json:"social_links,omitempty"`
@@ -165,7 +165,7 @@ type PublicSellerProfile struct {
 	LogoURL      string       `json:"logo_url,omitempty"`
 	BannerURL    string       `json:"banner_url,omitempty"`
 	SupportPhone string       `json:"support_phone,omitempty"`
-	Address      string       `json:"address,omitempty"`
+	Address      StringMap    `json:"address,omitempty"`
 	Latitude     *float64     `json:"latitude,omitempty"`
 	Longitude    *float64     `json:"longitude,omitempty"`
 	SocialLinks  SocialLinks  `json:"social_links,omitempty"`
