@@ -15,7 +15,7 @@ import (
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
-	"github.com/rs/cors" // <--- YANGI KUTUBXONA
+	"github.com/rs/cors"
 	httpSwagger "github.com/swaggo/http-swagger"
 )
 
@@ -64,25 +64,14 @@ func userMeHandler(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// corsMiddleware - ENDI BU FAKAT O'TKAZGICH (WRAPPER)
-// Haqiqiy ishni pastda "rs/cors" bajaradi. Kodni buzmaslik uchun buni qoldiramiz.
-func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Log incoming request (ixtiyoriy)
-		// log.Printf("📥 %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-		next(w, r)
-	}
-}
-
 func main() {
-	// .env faylini yuklash
+	// 1. Konfiguratsiyani yuklash
 	if err := godotenv.Load(); err != nil {
 		log.Println("⚠️  .env fayli topilmadi, environment variablelardan foydalaniladi")
 	} else {
 		fmt.Println("✅ .env fayli yuklandi")
 	}
 
-	// Environment variablelarni o'qish
 	dbHost := getEnv("DB_HOST", "localhost")
 	dbPort := getEnv("DB_PORT", "5432")
 	dbUser := getEnv("DB_USER", "mebel_user")
@@ -91,13 +80,11 @@ func main() {
 	serverPort := getEnv("SERVER_PORT", "8081")
 	jwtSecret := getEnv("JWT_SECRET", "mebellar-super-secret-key-2024")
 
-	// JWT secretni handlers ga uzatish
+	// Global sozlamalar
 	handlers.SetJWTSecret(jwtSecret)
-
-	// WebSocket JWT secretni uzatish
 	websocket.SetJWTSecret(jwtSecret)
 
-	// 1. Bazaga ulanish
+	// 2. Bazaga ulanish
 	psqlInfo := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
 		dbHost, dbPort, dbUser, dbPassword, dbName)
 
@@ -107,105 +94,85 @@ func main() {
 	}
 	defer db.Close()
 
-	err = db.Ping()
-	if err != nil {
+	if err = db.Ping(); err != nil {
 		log.Fatal("❌ Database ping error: ", err)
 	}
 	fmt.Printf("✅ Baza ulangan! (%s@%s:%s/%s)\n", dbUser, dbHost, dbPort, dbName)
 
-	// Users jadvalini yaratish (agar mavjud bo'lmasa)
+	// 3. Jadvallarni tekshirish va yaratish
 	createUsersTable(db)
 
-	// SMS Service (Eskiz.uz) sozlash
+	// 4. Xizmatlarni ishga tushirish
 	initSMSService()
-
-	// WebSocket Hub ishga tushirish
 	websocket.InitGlobalHub()
 
-	// 2. Marshrutlar (Routes)
-	// Kategoriyalar
-	http.HandleFunc("/api/categories", corsMiddleware(handlers.GetCategories(db)))
-	http.HandleFunc("/api/categories/", corsMiddleware(handlers.GetCategoryByID(db)))
+	// 5. Marshrutlarni ro'yxatdan o'tkazish (http.HandleFunc)
+	// Izoh: corsMiddleware olib tashlandi, chunki quyida rs/cors ishlatilmoqda.
 
-	// Hududlar
-	http.HandleFunc("/api/regions", corsMiddleware(handlers.GetRegions(db)))
+	// --- Public Endpoints ---
+	http.HandleFunc("/api/categories", handlers.GetCategories(db))
+	http.HandleFunc("/api/categories/", handlers.GetCategoryByID(db))
+	http.HandleFunc("/api/regions", handlers.GetRegions(db))
+	http.HandleFunc("/api/products", handlers.GetProducts(db))
+	http.HandleFunc("/api/products/new", handlers.GetNewArrivals(db))
+	http.HandleFunc("/api/products/popular", handlers.GetPopularProducts(db))
+	http.HandleFunc("/api/products/", handlers.GetProductByID(db))
+	http.HandleFunc("/api/shops/", handlers.GetPublicShopBySlug(db))
+	http.HandleFunc("/api/common/cancellation-reasons", handlers.GetCancellationReasons(db))
 
-	// Mahsulotlar
-	http.HandleFunc("/api/products", corsMiddleware(handlers.GetProducts(db)))
-	http.HandleFunc("/api/products/new", corsMiddleware(handlers.GetNewArrivals(db)))
-	http.HandleFunc("/api/products/popular", corsMiddleware(handlers.GetPopularProducts(db)))
-	http.HandleFunc("/api/products/", corsMiddleware(handlers.GetProductByID(db)))
+	// --- Auth Endpoints ---
+	http.HandleFunc("/api/auth/send-otp", handlers.SendOTP(db))
+	http.HandleFunc("/api/auth/verify-otp", handlers.VerifyOTP(db))
+	http.HandleFunc("/api/auth/register", handlers.Register(db))
+	http.HandleFunc("/api/auth/login", handlers.Login(db))
+	http.HandleFunc("/api/auth/forgot-password", handlers.ForgotPassword(db))
+	http.HandleFunc("/api/auth/reset-password", handlers.ResetPassword(db))
 
-	// Autentifikatsiya
-	http.HandleFunc("/api/auth/send-otp", corsMiddleware(handlers.SendOTP(db)))
-	http.HandleFunc("/api/auth/verify-otp", corsMiddleware(handlers.VerifyOTP(db)))
-	http.HandleFunc("/api/auth/register", corsMiddleware(handlers.Register(db)))
-	http.HandleFunc("/api/auth/login", corsMiddleware(handlers.Login(db)))
-	http.HandleFunc("/api/auth/forgot-password", corsMiddleware(handlers.ForgotPassword(db)))
-	http.HandleFunc("/api/auth/reset-password", corsMiddleware(handlers.ResetPassword(db)))
+	// --- User (Protected) Endpoints ---
+	http.HandleFunc("/api/user/me", handlers.JWTMiddleware(db, userMeHandler(db)))
+	http.HandleFunc("/api/user/change-phone/request", handlers.JWTMiddleware(db, handlers.RequestPhoneChange(db)))
+	http.HandleFunc("/api/user/change-phone/verify", handlers.JWTMiddleware(db, handlers.VerifyPhoneChange(db)))
+	http.HandleFunc("/api/user/change-email/request", handlers.JWTMiddleware(db, handlers.RequestEmailChange(db)))
+	http.HandleFunc("/api/user/change-email/verify", handlers.JWTMiddleware(db, handlers.VerifyEmailChange(db)))
+	http.HandleFunc("/api/user/become-seller", handlers.JWTMiddleware(db, handlers.BecomeSeller(db)))
+	http.HandleFunc("/api/orders", handlers.CustomerOrdersHandler(db)) // Mijoz buyurtmalari
 
-	// User profile
-	http.HandleFunc("/api/user/me", corsMiddleware(handlers.JWTMiddleware(db, userMeHandler(db))))
+	// --- Seller (Protected) Endpoints ---
+	http.HandleFunc("/api/seller/shops", handlers.JWTMiddleware(db, handlers.ShopsHandler(db)))
+	http.HandleFunc("/api/seller/shops/", handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db)))
+	http.HandleFunc("/api/seller/products", handlers.JWTMiddleware(db, handlers.SellerProductsHandler(db)))
+	http.HandleFunc("/api/seller/products/", handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db)))
+	http.HandleFunc("/api/seller/orders", handlers.JWTMiddleware(db, handlers.SellerOrdersHandler(db)))
+	http.HandleFunc("/api/seller/orders/stats", handlers.JWTMiddleware(db, handlers.GetOrderStats(db)))
+	http.HandleFunc("/api/seller/orders/", handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db)))
+	http.HandleFunc("/api/seller/profile", handlers.JWTMiddleware(db, handlers.SellerProfileHandler(db)))
+	http.HandleFunc("/api/seller/account", handlers.JWTMiddleware(db, handlers.DeleteSellerAccount(db)))
+	http.HandleFunc("/api/seller/dashboard/stats", handlers.JWTMiddleware(db, handlers.GetDashboardStats(db)))
+	http.HandleFunc("/api/seller/analytics/cancellations", handlers.JWTMiddleware(db, handlers.GetCancellationStats(db)))
 
-	// Telefon/Email o'zgartirish
-	http.HandleFunc("/api/user/change-phone/request", corsMiddleware(handlers.JWTMiddleware(db, handlers.RequestPhoneChange(db))))
-	http.HandleFunc("/api/user/change-phone/verify", corsMiddleware(handlers.JWTMiddleware(db, handlers.VerifyPhoneChange(db))))
-	http.HandleFunc("/api/user/change-email/request", corsMiddleware(handlers.JWTMiddleware(db, handlers.RequestEmailChange(db))))
-	http.HandleFunc("/api/user/change-email/verify", corsMiddleware(handlers.JWTMiddleware(db, handlers.VerifyEmailChange(db))))
+	// --- Admin (Protected: Admin/Moderator Only) ---
+	http.HandleFunc("/api/admin/dashboard-stats", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminDashboardStats(db)))
+	http.HandleFunc("/api/admin/users", handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db)))
+	http.HandleFunc("/api/admin/categories", handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db)))
+	http.HandleFunc("/api/admin/categories/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db)))
 
-	// Sotuvchi bo'lish
-	http.HandleFunc("/api/user/become-seller", corsMiddleware(handlers.JWTMiddleware(db, handlers.BecomeSeller(db))))
-
-	// SELLER SHOP ENDPOINTS
-	http.HandleFunc("/api/seller/shops", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopsHandler(db))))
-	http.HandleFunc("/api/seller/shops/", corsMiddleware(handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db))))
-
-	// Seller Products
-	http.HandleFunc("/api/seller/products", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductsHandler(db))))
-	http.HandleFunc("/api/seller/products/", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db))))
-
-	// CUSTOMER ORDERS
-	http.HandleFunc("/api/orders", corsMiddleware(handlers.CustomerOrdersHandler(db)))
-
-	// SELLER ORDERS
-	http.HandleFunc("/api/seller/orders", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerOrdersHandler(db))))
-	http.HandleFunc("/api/seller/orders/stats", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetOrderStats(db))))
-	http.HandleFunc("/api/seller/orders/", corsMiddleware(handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db))))
-
-	// SELLER PROFILE & DASHBOARD
-	http.HandleFunc("/api/seller/profile", corsMiddleware(handlers.JWTMiddleware(db, handlers.SellerProfileHandler(db))))
-	http.HandleFunc("/api/seller/account", corsMiddleware(handlers.JWTMiddleware(db, handlers.DeleteSellerAccount(db))))
-	http.HandleFunc("/api/seller/dashboard/stats", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetDashboardStats(db))))
-	http.HandleFunc("/api/seller/analytics/cancellations", corsMiddleware(handlers.JWTMiddleware(db, handlers.GetCancellationStats(db))))
-
-	// COMMON & ADMIN
-	http.HandleFunc("/api/common/cancellation-reasons", corsMiddleware(handlers.GetCancellationReasons(db)))
-	http.HandleFunc("/api/admin/dashboard-stats", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminDashboardStats(db))))
-	http.HandleFunc("/api/admin/users", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db))))
-	http.HandleFunc("/api/admin/categories", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db))))
-	http.HandleFunc("/api/admin/categories/", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db))))
-	http.HandleFunc("/api/admin/categories", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db))))
-	http.HandleFunc("/api/admin/categories/", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db))))
-
-	// DEBUG
-	http.HandleFunc("/api/debug/seed-orders", corsMiddleware(handlers.JWTMiddleware(db, handlers.SeedOrders(db))))
-	http.HandleFunc("/api/shops/", corsMiddleware(handlers.GetPublicShopBySlug(db)))
-
-	// WEBSOCKET
+	// --- WebSocket ---
 	http.HandleFunc("/ws/orders", websocket.HandleWebSocket(db))
 
-	// 3. Static files
+	// --- Static Files ---
 	fs := http.FileServer(http.Dir("uploads"))
 	http.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
 
-	// 4. Swagger UI
+	// --- Swagger ---
 	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
 
-	// ==========================================
-	// 5. YANGI CORS SOZLAMALARI VA SERVERNI YOQISH
-	// ==========================================
+	// --- Debug/Seed ---
+	http.HandleFunc("/api/debug/seed-orders", handlers.JWTMiddleware(db, handlers.SeedOrders(db)))
+
+	// 6. CORS Sozlamalari va Serverni ishga tushirish
 	fmt.Println("🚀 Server ishga tushmoqda...")
 
+	// rs/cors kutubxonasi barcha CORS logikasini boshqaradi
 	c := cors.New(cors.Options{
 		AllowedOrigins: []string{
 			"http://localhost:5173",           // Local Admin/Frontend
@@ -214,32 +181,35 @@ func main() {
 			"https://api.mebellar-olami.uz",   // API o'zi
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-Requested-With"},
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Shop-ID"}, // X-Shop-ID qo'shildi
 		AllowCredentials: true,
-		Debug:            true, // Ishlab ketguncha yoqib turamiz
+		Debug:            true, // Ishlab chiqish jarayonida yoqib turish foydali
 	})
 
-	// Barcha marshrutlarni (handlerlarni) CORS bilan o'raymiz
+	// Barcha marshrutlarni CORS handler bilan o'rash
 	handler := c.Handler(http.DefaultServeMux)
 
 	fmt.Printf("✅ Server %s-portda tayyor!\n", serverPort)
 	log.Fatal(http.ListenAndServe(":"+serverPort, handler))
 }
 
-// createUsersTable va boshqa yordamchi funksiyalar (o'zgarishsiz)
+// ---------------------------------------------------------
+// Yordamchi Funksiyalar (DB Migration)
+// ---------------------------------------------------------
+
 func createUsersTable(db *sql.DB) {
 	query := `
-  CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    full_name VARCHAR(255) NOT NULL,
-    phone VARCHAR(20) UNIQUE NOT NULL,
-    email VARCHAR(255) UNIQUE,
-    avatar_url VARCHAR(500),
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-  );
-  `
+	CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		full_name VARCHAR(255) NOT NULL,
+		phone VARCHAR(20) UNIQUE NOT NULL,
+		email VARCHAR(255) UNIQUE,
+		avatar_url VARCHAR(500),
+		password_hash VARCHAR(255) NOT NULL,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW()
+	);
+	`
 	_, err := db.Exec(query)
 	if err != nil {
 		log.Printf("Users jadvalini yaratishda xatolik: %v", err)
@@ -247,40 +217,47 @@ func createUsersTable(db *sql.DB) {
 		fmt.Println("✅ Users jadvali tayyor!")
 	}
 
+	// Ustunlarni tekshirish va qo'shish (Migration)
 	addColumnIfNotExists(db, "users", "email", "VARCHAR(255) UNIQUE")
 	addColumnIfNotExists(db, "users", "avatar_url", "VARCHAR(500)")
 	addColumnIfNotExists(db, "users", "is_active", "BOOLEAN DEFAULT TRUE")
 	addColumnIfNotExists(db, "users", "role", "VARCHAR(50) DEFAULT 'customer'")
 	addColumnIfNotExists(db, "users", "onesignal_id", "VARCHAR(255)")
+
 	createSellerProfilesTable(db)
 }
 
 func createSellerProfilesTable(db *sql.DB) {
 	query := `
-  CREATE TABLE IF NOT EXISTS seller_profiles (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    shop_name VARCHAR(255) NOT NULL,
-    slug VARCHAR(255) UNIQUE,
-    description TEXT,
-    logo_url VARCHAR(500),
-    banner_url VARCHAR(500),
-    legal_name VARCHAR(255),
-    tax_id VARCHAR(50),
-    bank_account VARCHAR(50),
-    bank_name VARCHAR(255),
-    support_phone VARCHAR(20),
-    address VARCHAR(500),
-    latitude FLOAT8,
-    longitude FLOAT8,
-    social_links JSONB DEFAULT '{}',
-    working_hours JSONB DEFAULT '{}',
-    is_verified BOOLEAN DEFAULT FALSE,
-    rating FLOAT DEFAULT 0,
-    created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
-  );
-  `
+	CREATE TABLE IF NOT EXISTS seller_profiles (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- user_id INTEGER bo'lishi kerak (serial), UUID emas
+		shop_name VARCHAR(255) NOT NULL,
+		slug VARCHAR(255) UNIQUE,
+		description TEXT,
+		logo_url VARCHAR(500),
+		banner_url VARCHAR(500),
+		legal_name VARCHAR(255),
+		tax_id VARCHAR(50),
+		bank_account VARCHAR(50),
+		bank_name VARCHAR(255),
+		support_phone VARCHAR(20),
+		address VARCHAR(500),
+		latitude FLOAT8,
+		longitude FLOAT8,
+		social_links JSONB DEFAULT '{}',
+		working_hours JSONB DEFAULT '{}',
+		is_verified BOOLEAN DEFAULT FALSE,
+		rating FLOAT DEFAULT 0,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW()
+	);
+	`
+	// Eslatma: user_id turi 'users' jadvalidagi 'id' turi bilan mos bo'lishi kerak.
+	// Agar users.id SERIAL (int) bo'lsa, bu yerda user_id INTEGER bo'lishi kerak.
+	// Agar users.id UUID bo'lsa, bu yerda ham UUID bo'lishi kerak.
+	// Yuqoridagi kodda users.id SERIAL deb olingan.
+
 	_, err := db.Exec(query)
 	if err != nil {
 		log.Printf("Seller profiles jadvalini yaratishda xatolik: %v", err)
@@ -288,6 +265,7 @@ func createSellerProfilesTable(db *sql.DB) {
 		fmt.Println("✅ Seller Profiles jadvali tayyor!")
 	}
 
+	// Indekslar
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_user_id ON seller_profiles(user_id)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_shop_name ON seller_profiles(shop_name)`)
 	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_slug ON seller_profiles(slug)`)
@@ -296,16 +274,16 @@ func createSellerProfilesTable(db *sql.DB) {
 
 func addColumnIfNotExists(db *sql.DB, table, column, dataType string) {
 	query := fmt.Sprintf(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = '%s' AND column_name = '%s'
-      ) THEN
-        ALTER TABLE %s ADD COLUMN %s %s;
-      END IF;
-    END $$;
-  `, table, column, table, column, dataType)
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = '%s' AND column_name = '%s'
+			) THEN
+				ALTER TABLE %s ADD COLUMN %s %s;
+			END IF;
+		END $$;
+	`, table, column, table, column, dataType)
 
 	_, err := db.Exec(query)
 	if err != nil {
