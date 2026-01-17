@@ -20,7 +20,7 @@ type Shop struct {
 	SellerID string  `json:"seller_id" example:"550e8400-e29b-41d4-a716-446655440001"`
 	
 	// Multi-language maydonlar
-	Name        StringMap    `json:"name" swaggertype:"object" example:"{\"uz\":\"Mebel House Toshkent\",\"ru\":\"Мебель Хаус Ташкент\",\"en\":\"Mebel House Tashkent\"}"`
+	Name        StringMap    `json:"name" swaggertype:"object"`
 	Description StringMap    `json:"description,omitempty" swaggertype:"object"`
 	Address     StringMap    `json:"address,omitempty" swaggertype:"object"`
 	

@@ -5,7 +5,7 @@ package models
 type Category struct {
 	ID            string                `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ParentID      *string               `json:"parent_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
-	Name          map[string]string    `json:"name" example:"{\"uz\":\"Yashash xonasi\",\"ru\":\"Гостиная\",\"en\":\"Living Room\"}"`
+	Name          map[string]string    `json:"name"`
 	Slug          string                `json:"slug" example:"living-room"`
 	IconURL       string                `json:"icon_url" example:"https://img.icons8.com/fluency/96/living-room.png"`
 	IsActive      bool                  `json:"is_active" example:"true"`
