@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log"
@@ -17,9 +18,31 @@ import (
 	"github.com/google/uuid"
 )
 
-// generateSlug - name dan slug yaratish (URL-friendly)
-// Masalan: "Yashash xonasi" -> "yashash-xonasi"
-func generateSlug(name string) string {
+// generateSlug - name map dan slug yaratish (URL-friendly)
+// English ('en') nomidan foydalanadi, agar yo'q bo'lsa Uzbek ('uz') dan
+func generateSlug(nameMap map[string]string) string {
+	var name string
+	
+	// Avval 'en' ni tekshirish
+	if enName, ok := nameMap["en"]; ok && enName != "" {
+		name = enName
+	} else if uzName, ok := nameMap["uz"]; ok && uzName != "" {
+		// Fallback to 'uz'
+		name = uzName
+	} else {
+		// Agar hech biri bo'lmasa, birinchi mavjud nomni olish
+		for _, n := range nameMap {
+			if n != "" {
+				name = n
+				break
+			}
+		}
+	}
+	
+	if name == "" {
+		return "category"
+	}
+	
 	// Kichik harflarga o'tkazish
 	slug := strings.ToLower(name)
 	
@@ -70,6 +93,19 @@ func ensureUniqueSlug(db *sql.DB, baseSlug string, excludeID string) string {
 	return slug
 }
 
+// scanCategoryName - JSONB name ni scan qilish va map ga o'tkazish
+func scanCategoryName(nameJSON []byte) (map[string]string, error) {
+	var nameMap map[string]string
+	if len(nameJSON) == 0 {
+		return map[string]string{"uz": "", "ru": "", "en": ""}, nil
+	}
+	err := json.Unmarshal(nameJSON, &nameMap)
+	if err != nil {
+		return nil, err
+	}
+	return nameMap, nil
+}
+
 // GetCategories godoc
 // @Summary      Barcha kategoriyalarni olish (daraxt ko'rinishida)
 // @Description  Kategoriyalarni ierarxik (nested) formatda qaytaradi
@@ -109,12 +145,12 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 	// Barcha kategoriyalarni olish (faqat faol kategoriyalar)
 	query := `
 		SELECT 
-			c.id, c.parent_id, c.name, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+			c.id, c.parent_id, c.name::text, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
 			COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
 		WHERE c.is_active = true
-		ORDER BY c.sort_order ASC, c.name ASC
+		ORDER BY c.sort_order ASC, c.name->>'uz' ASC
 	`
 
 	rows, err := db.Query(query)
@@ -134,10 +170,18 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 
 	for rows.Next() {
 		var c models.Category
-		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+		var nameJSON string
+		err := rows.Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 		if err != nil {
 			log.Printf("Category scan xatosi: %v", err)
 			continue
+		}
+		
+		// JSONB ni map ga o'tkazish
+		c.Name, err = scanCategoryName([]byte(nameJSON))
+		if err != nil {
+			log.Printf("Category name parse xatosi: %v", err)
+			c.Name = map[string]string{"uz": "", "ru": "", "en": ""}
 		}
 
 		c.SubCategories = []models.Category{} // Initialize
@@ -176,12 +220,12 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	query := `
 		SELECT 
-			c.id, c.parent_id, c.name, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+			c.id, c.parent_id, c.name::text, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
 			COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
 		WHERE c.is_active = true
-		ORDER BY c.sort_order ASC, c.parent_id NULLS FIRST, c.name ASC
+		ORDER BY c.sort_order ASC, c.parent_id NULLS FIRST, c.name->>'uz' ASC
 	`
 
 	rows, err := db.Query(query)
@@ -198,11 +242,20 @@ func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	categories := []models.Category{}
 	for rows.Next() {
 		var c models.Category
-		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+		var nameJSON string
+		err := rows.Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 		if err != nil {
 			log.Printf("Category scan xatosi: %v", err)
 			continue
 		}
+		
+		// JSONB ni map ga o'tkazish
+		c.Name, err = scanCategoryName([]byte(nameJSON))
+		if err != nil {
+			log.Printf("Category name parse xatosi: %v", err)
+			c.Name = map[string]string{"uz": "", "ru": "", "en": ""}
+		}
+		
 		categories = append(categories, c)
 	}
 
@@ -249,11 +302,11 @@ func GetAdminCategories(db *sql.DB) http.HandlerFunc {
 		// Barcha kategoriyalarni olish (faol va nofaol)
 		query := `
 			SELECT 
-				c.id, c.parent_id, c.name, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+				c.id, c.parent_id, c.name::text, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
 				COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
 				(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
-			ORDER BY c.sort_order ASC, c.created_at DESC, c.name ASC
+			ORDER BY c.sort_order ASC, c.created_at DESC, c.name->>'uz' ASC
 		`
 
 		rows, err := db.Query(query)
@@ -270,11 +323,20 @@ func GetAdminCategories(db *sql.DB) http.HandlerFunc {
 		categories := []models.Category{}
 		for rows.Next() {
 			var c models.Category
-			err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+			var nameJSON string
+			err := rows.Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 			if err != nil {
 				log.Printf("Category scan xatosi: %v", err)
 				continue
 			}
+			
+			// JSONB ni map ga o'tkazish
+			c.Name, err = scanCategoryName([]byte(nameJSON))
+			if err != nil {
+				log.Printf("Category name parse xatosi: %v", err)
+				c.Name = map[string]string{"uz": "", "ru": "", "en": ""}
+			}
+			
 			categories = append(categories, c)
 		}
 
@@ -331,7 +393,7 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 
 		// Kategoriyani olish (sub-kategoriyalar bilan)
 		query := `
-			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			SELECT id, parent_id, name::text, COALESCE(slug, ''), COALESCE(icon_url, ''),
 			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
@@ -339,7 +401,8 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 		`
 
 		var c models.Category
-		err := db.QueryRow(query, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+		var nameJSON string
+		err := db.QueryRow(query, categoryID).Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -358,14 +421,21 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// JSONB ni map ga o'tkazish
+		c.Name, err = scanCategoryName([]byte(nameJSON))
+		if err != nil {
+			log.Printf("Category name parse xatosi: %v", err)
+			c.Name = map[string]string{"uz": "", "ru": "", "en": ""}
+		}
+
 		// Sub-kategoriyalarni olish
 		subQuery := `
-			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			SELECT id, parent_id, name::text, COALESCE(slug, ''), COALESCE(icon_url, ''),
 			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = sc.id AND p.is_active = true) as product_count
 			FROM categories sc
 			WHERE parent_id = $1
-			ORDER BY sort_order ASC, name ASC
+			ORDER BY sort_order ASC, name->>'uz' ASC
 		`
 
 		rows, err := db.Query(subQuery, categoryID)
@@ -374,7 +444,12 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 			c.SubCategories = []models.Category{}
 			for rows.Next() {
 				var sub models.Category
-				if err := rows.Scan(&sub.ID, &sub.ParentID, &sub.Name, &sub.Slug, &sub.IconURL, &sub.IsActive, &sub.SortOrder, &sub.ProductCount); err == nil {
+				var subNameJSON string
+				if err := rows.Scan(&sub.ID, &sub.ParentID, &subNameJSON, &sub.Slug, &sub.IconURL, &sub.IsActive, &sub.SortOrder, &sub.ProductCount); err == nil {
+					sub.Name, _ = scanCategoryName([]byte(subNameJSON))
+					if sub.Name == nil {
+						sub.Name = map[string]string{"uz": "", "ru": "", "en": ""}
+					}
 					c.SubCategories = append(c.SubCategories, sub)
 				}
 			}
@@ -402,7 +477,7 @@ type CreateCategoryRequest struct {
 // @Tags         admin
 // @Accept       multipart/form-data
 // @Produce      json
-// @Param        name formData string true "Kategoriya nomi"
+// @Param        name_json formData string true "Kategoriya nomi (JSON): {\"uz\":\"...\",\"ru\":\"...\",\"en\":\"...\"}"
 // @Param        parent_id formData string false "Parent kategoriya ID"
 // @Param        icon formData file false "Kategoriya ikonasi (jpg, png)"
 // @Param        is_active formData boolean false "Kategoriya faolligi (default: true)"
@@ -443,12 +518,51 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Name olish
-		name := strings.TrimSpace(r.FormValue("name"))
-		if name == "" {
+		// Name olish (JSON formatda: {"uz": "...", "ru": "...", "en": "..."})
+		nameJSONStr := strings.TrimSpace(r.FormValue("name_json"))
+		if nameJSONStr == "" {
+			// Fallback: try "name" field if name_json is not provided (for backward compatibility)
+			nameJSONStr = strings.TrimSpace(r.FormValue("name"))
+		}
+		
+		if nameJSONStr == "" {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Kategoriya nomi kiritilishi shart",
+			})
+			return
+		}
+
+		// JSON ni parse qilish
+		var nameMap map[string]string
+		err = json.Unmarshal([]byte(nameJSONStr), &nameMap)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri name formati. JSON bo'lishi kerak: {\"uz\":\"...\",\"ru\":\"...\",\"en\":\"...\"}",
+			})
+			return
+		}
+
+		// Validatsiya: uz, ru, en mavjudligini tekshirish
+		if _, ok := nameMap["uz"]; !ok {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "name.uz kiritilishi shart",
+			})
+			return
+		}
+		if _, ok := nameMap["ru"]; !ok {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "name.ru kiritilishi shart",
+			})
+			return
+		}
+		if _, ok := nameMap["en"]; !ok {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "name.en kiritilishi shart",
 			})
 			return
 		}
@@ -469,8 +583,8 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// Slug yaratish (name dan avtomatik)
-		baseSlug := generateSlug(name)
+		// Slug yaratish (English nomidan)
+		baseSlug := generateSlug(nameMap)
 		slug := ensureUniqueSlug(db, baseSlug, "")
 
 		// is_active olish (default: true)
@@ -562,15 +676,25 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 		// Kategoriya ID yaratish (UUID)
 		categoryID := uuid.New().String()
 
+		// Name map ni JSONB ga o'tkazish
+		nameJSONBytes, err := json.Marshal(nameMap)
+		if err != nil {
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Name ma'lumotlarini JSON ga o'tkazishda xatolik",
+			})
+			return
+		}
+
 		// Kategoriyani bazaga qo'shish
 		query := `
 			INSERT INTO categories (id, name, slug, icon_url, parent_id, is_active, sort_order, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
+			VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, NOW(), NOW())
 			RETURNING id
 		`
 
 		var insertedID string
-		err = db.QueryRow(query, categoryID, name, slug, iconURL, parentID, isActive, sortOrder).Scan(&insertedID)
+		err = db.QueryRow(query, categoryID, string(nameJSONBytes), slug, iconURL, parentID, isActive, sortOrder).Scan(&insertedID)
 		if err != nil {
 			log.Printf("CreateCategory: Insert xatosi: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -584,13 +708,22 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 
 		// Yaratilgan kategoriyani qaytarish
 		var c models.Category
+		var nameJSON string
 		err = db.QueryRow(`
-			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			SELECT id, parent_id, name::text, COALESCE(slug, ''), COALESCE(icon_url, ''),
 			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE id = $1
-		`, insertedID).Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+		`, insertedID).Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+
+		// JSONB ni map ga o'tkazish
+		if err == nil {
+			c.Name, _ = scanCategoryName([]byte(nameJSON))
+			if c.Name == nil {
+				c.Name = nameMap // Use the original map if parsing fails
+			}
+		}
 
 		if err != nil {
 			log.Printf("CreateCategory: Fetch xatosi: %v", err)
@@ -617,7 +750,7 @@ type UpdateCategoryRequest struct {
 // @Accept       multipart/form-data
 // @Produce      json
 // @Param        id path string true "Kategoriya ID"
-// @Param        name formData string false "Kategoriya nomi"
+// @Param        name_json formData string false "Kategoriya nomi (JSON): {\"uz\":\"...\",\"ru\":\"...\",\"en\":\"...\"}"
 // @Param        icon formData file false "Kategoriya ikonasi (jpg, png)"
 // @Param        is_active formData boolean false "Kategoriya faolligi"
 // @Param        sort_order formData integer false "Tartib raqami"
@@ -681,13 +814,46 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Name olish (optional)
-		var name *string
+		// Name olish (optional) - JSON formatda
+		var nameMap map[string]string
 		var slug *string
-		if nameStr := strings.TrimSpace(r.FormValue("name")); nameStr != "" {
-			name = &nameStr
-			// Agar name o'zgarsa, slug ham yangilanadi
-			baseSlug := generateSlug(nameStr)
+		nameJSONStr := strings.TrimSpace(r.FormValue("name_json"))
+		if nameJSONStr != "" {
+			// JSON ni parse qilish
+			err = json.Unmarshal([]byte(nameJSONStr), &nameMap)
+			if err != nil {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Noto'g'ri name formati. JSON bo'lishi kerak: {\"uz\":\"...\",\"ru\":\"...\",\"en\":\"...\"}",
+				})
+				return
+			}
+
+			// Validatsiya: uz, ru, en mavjudligini tekshirish
+			if _, ok := nameMap["uz"]; !ok {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "name.uz kiritilishi shart",
+				})
+				return
+			}
+			if _, ok := nameMap["ru"]; !ok {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "name.ru kiritilishi shart",
+				})
+				return
+			}
+			if _, ok := nameMap["en"]; !ok {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "name.en kiritilishi shart",
+				})
+				return
+			}
+
+			// Agar name o'zgarsa, slug ham yangilanadi (English nomidan)
+			baseSlug := generateSlug(nameMap)
 			newSlug := ensureUniqueSlug(db, baseSlug, categoryID)
 			slug = &newSlug
 		}
@@ -790,7 +956,7 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Hech narsa yangilanmayapti
-		if name == nil && iconURL == nil && isActive == nil && sortOrder == nil {
+		if len(nameMap) == 0 && iconURL == nil && isActive == nil && sortOrder == nil {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Hech narsa o'zgartirilmadi",
@@ -803,9 +969,19 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 		args := []interface{}{}
 		argIndex := 1
 
-		if name != nil && *name != "" {
-			updateFields = append(updateFields, fmt.Sprintf("name = $%d", argIndex))
-			args = append(args, *name)
+		if len(nameMap) > 0 {
+			// Name map ni JSONB ga o'tkazish
+			nameJSONBytes, err := json.Marshal(nameMap)
+			if err != nil {
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Name ma'lumotlarini JSON ga o'tkazishda xatolik",
+				})
+				return
+			}
+			
+			updateFields = append(updateFields, fmt.Sprintf("name = $%d::jsonb", argIndex))
+			args = append(args, string(nameJSONBytes))
 			argIndex++
 			
 			// Agar name o'zgarsa, slug ham yangilanadi
@@ -853,13 +1029,24 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 
 		// Yangilangan kategoriyani qaytarish
 		var c models.Category
+		var nameJSON string
 		err = db.QueryRow(`
-			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			SELECT id, parent_id, name::text, COALESCE(slug, ''), COALESCE(icon_url, ''),
 			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE id = $1
-		`, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+		`, categoryID).Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+
+		// JSONB ni map ga o'tkazish
+		if err == nil {
+			c.Name, _ = scanCategoryName([]byte(nameJSON))
+			if c.Name == nil && len(nameMap) > 0 {
+				c.Name = nameMap // Use the updated map if parsing fails
+			} else if c.Name == nil {
+				c.Name = map[string]string{"uz": "", "ru": "", "en": ""}
+			}
+		}
 
 		if err != nil {
 			log.Printf("UpdateCategory: Fetch xatosi: %v", err)
