@@ -96,7 +96,7 @@ type SellerProfile struct {
 
 	// Aloqa va joylashuv
 	SupportPhone string   `json:"support_phone,omitempty" example:"+998901234567"`
-	Address      StringMap `json:"address,omitempty" swaggertype:"object" example:"{\"uz\":\"Toshkent, Chilonzor tumani\",\"ru\":\"Ташкент, Чилонзор район\",\"en\":\"Tashkent, Chilonzor district\"}"`
+	Address      StringMap `json:"address,omitempty" swaggertype:"object"`
 	Latitude     *float64 `json:"latitude,omitempty" example:"41.311081"`
 	Longitude    *float64 `json:"longitude,omitempty" example:"69.240562"`
 
