@@ -184,7 +184,6 @@ func main() {
 	http.HandleFunc("/api/admin/users", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db))))
 	http.HandleFunc("/api/admin/categories", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db))))
 	http.HandleFunc("/api/admin/categories/", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db))))
-	http.HandleFunc("/api/admin/users", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db))))
 	http.HandleFunc("/api/admin/categories", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db))))
 	http.HandleFunc("/api/admin/categories/", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db))))
 
