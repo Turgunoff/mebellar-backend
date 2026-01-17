@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS shops (
     phone VARCHAR(20),
     latitude FLOAT8,
     longitude FLOAT8,
-    region_id UUID REFERENCES regions(id) ON DELETE SET NULL,
+    region_id INTEGER REFERENCES regions(id) ON DELETE SET NULL,
     
     -- Ish vaqtlari (JSONB)
     working_hours JSONB DEFAULT '{}',

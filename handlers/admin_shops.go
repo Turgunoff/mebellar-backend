@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"mebellar-backend/models"
+	"mebellar-backend/pkg/translator"
 	"net/http"
 	"strconv"
 	"strings"
@@ -81,7 +82,8 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 				COALESCE(s.description::text, '{}')::jsonb,
 				COALESCE(s.address::text, '{}')::jsonb,
 				COALESCE(s.slug, ''), COALESCE(s.logo_url, ''), COALESCE(s.banner_url, ''),
-				COALESCE(s.phone, ''), s.latitude, s.longitude, s.region_id,
+				COALESCE(s.phone, ''), s.latitude, s.longitude, 
+				s.region_id,
 				COALESCE(s.working_hours::text, '{}')::jsonb,
 				s.is_active, s.is_verified, s.is_main, s.rating,
 				s.created_at, s.updated_at,
@@ -102,10 +104,13 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 			argIndex++
 		}
 		if regionID != "" {
-			baseQuery += fmt.Sprintf(" AND s.region_id = $%d", argIndex)
-			countQuery += fmt.Sprintf(" AND region_id = $%d", argIndex)
-			args = append(args, regionID)
-			argIndex++
+			regionIDInt, err := strconv.Atoi(regionID)
+			if err == nil {
+				baseQuery += fmt.Sprintf(" AND s.region_id = $%d", argIndex)
+				countQuery += fmt.Sprintf(" AND region_id = $%d", argIndex)
+				args = append(args, regionIDInt)
+				argIndex++
+			}
 		}
 		if isActiveStr == "true" {
 			baseQuery += fmt.Sprintf(" AND s.is_active = $%d", argIndex)
@@ -247,14 +252,21 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Seller ID ni olish (query parametridan yoki request body dan)
+		// Seller ID ni olish (query parametridan)
 		sellerID := r.URL.Query().Get("seller_id")
 		if sellerID == "" {
-			// Try to get from request body if it's a nested structure
-			// For now, require it in query params
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "seller_id parametri kiritilishi shart (query parameter)",
+			})
+			return
+		}
+		
+		// Validate that name has at least Uzbek value
+		if req.Name == nil || req.Name["uz"] == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon nomi (name.uz) kiritilishi shart",
 			})
 			return
 		}
@@ -302,6 +314,48 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
+		// Translate shop details using Gemini AI
+		// Admin sends only Uzbek, we translate to Russian and English
+		nameMap := make(models.StringMap)
+		descMap := make(models.StringMap)
+		addrMap := make(models.StringMap)
+		
+		// Set Uzbek values
+		nameMap["uz"] = req.Name["uz"]
+		if req.Description != nil && req.Description["uz"] != "" {
+			descMap["uz"] = req.Description["uz"]
+		}
+		if req.Address != nil && req.Address["uz"] != "" {
+			addrMap["uz"] = req.Address["uz"]
+		}
+
+		// Call Gemini translation service
+		translatedName, translatedDesc, translatedAddr, err := translator.TranslateShop(
+			nameMap["uz"],
+			descMap["uz"],
+			addrMap["uz"],
+		)
+		if err != nil {
+			log.Printf("⚠️ Shop translation xatosi (fallback to uz only): %v", err)
+			// Fallback: use only Uzbek if translation fails
+			nameMap["ru"] = nameMap["uz"]
+			nameMap["en"] = nameMap["uz"]
+			if descMap["uz"] != "" {
+				descMap["ru"] = descMap["uz"]
+				descMap["en"] = descMap["uz"]
+			}
+			if addrMap["uz"] != "" {
+				addrMap["ru"] = addrMap["uz"]
+				addrMap["en"] = addrMap["uz"]
+			}
+		} else {
+			// Use translated values
+			nameMap = translatedName
+			descMap = translatedDesc
+			addrMap = translatedAddr
+			log.Printf("✅ Shop tarjima muvaffaqiyatli: %s -> ru:%s, en:%s", nameMap["uz"], nameMap["ru"], nameMap["en"])
+		}
+
 		// Default qiymatlar
 		isActive := true
 		if req.IsActive != nil {
@@ -313,14 +367,14 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		}
 
 		// JSONB maydonlarni tayyorlash
-		nameValue, _ := req.Name.Value()
+		nameValue, _ := nameMap.Value()
 		descValue := []byte("{}")
-		if req.Description != nil {
-			descValue, _ = req.Description.Value()
+		if len(descMap) > 0 {
+			descValue, _ = descMap.Value()
 		}
 		addrValue := []byte("{}")
-		if req.Address != nil {
-			addrValue, _ = req.Address.Value()
+		if len(addrMap) > 0 {
+			addrValue, _ = addrMap.Value()
 		}
 		workingHoursValue := []byte("{}")
 		if req.WorkingHours != nil {
@@ -507,7 +561,7 @@ func UpdateShop(db *sql.DB) http.HandlerFunc {
 		}
 		if req.RegionID != nil {
 			updates = append(updates, fmt.Sprintf("region_id = $%d", argIndex))
-			args = append(args, *req.RegionID)
+			args = append(args, *req.RegionID) // Already int type
 			argIndex++
 		}
 		if req.Latitude != nil {

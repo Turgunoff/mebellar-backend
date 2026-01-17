@@ -35,7 +35,7 @@ type Shop struct {
 	Phone     string   `json:"phone,omitempty" example:"+998901234567"`
 	Latitude  *float64 `json:"latitude,omitempty" example:"41.311081"`
 	Longitude *float64 `json:"longitude,omitempty" example:"69.240562"`
-	RegionID  *string  `json:"region_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440002"`
+	RegionID  *int     `json:"region_id,omitempty" example:"1"`
 	
 	// Ish vaqtlari
 	WorkingHours WorkingHours `json:"working_hours,omitempty" swaggertype:"object"`
@@ -159,7 +159,7 @@ type CreateShopRequest struct {
 	Description *StringMap    `json:"description,omitempty"`
 	Address     *StringMap    `json:"address,omitempty"`
 	Phone       *string      `json:"phone,omitempty"`
-	RegionID    *string       `json:"region_id,omitempty"`
+	RegionID    *int         `json:"region_id,omitempty"`
 	Latitude    *float64      `json:"latitude,omitempty"`
 	Longitude   *float64      `json:"longitude,omitempty"`
 	WorkingHours *WorkingHours `json:"working_hours,omitempty"`
@@ -173,7 +173,7 @@ type UpdateShopRequest struct {
 	Description *StringMap    `json:"description,omitempty"`
 	Address     *StringMap    `json:"address,omitempty"`
 	Phone       *string       `json:"phone,omitempty"`
-	RegionID    *string       `json:"region_id,omitempty"`
+	RegionID    *int          `json:"region_id,omitempty"`
 	Latitude    *float64      `json:"latitude,omitempty"`
 	Longitude   *float64      `json:"longitude,omitempty"`
 	LogoURL     *string       `json:"logo_url,omitempty"`

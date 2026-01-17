@@ -306,18 +306,18 @@ func GetSellerDetail(db *sql.DB) http.HandlerFunc {
 		// Shops ma'lumotlarini olish
 		shopsQuery := `
 			SELECT 
-				id, seller_id,
-				COALESCE(name::text, '{}')::jsonb,
-				COALESCE(description::text, '{}')::jsonb,
-				COALESCE(address::text, '{}')::jsonb,
-				COALESCE(slug, ''), COALESCE(logo_url, ''), COALESCE(banner_url, ''),
-				COALESCE(phone, ''), latitude, longitude, region_id,
-				COALESCE(working_hours::text, '{}')::jsonb,
-				is_active, is_verified, is_main, rating,
-				created_at, updated_at
-			FROM shops
-			WHERE seller_id = $1
-			ORDER BY is_main DESC, created_at DESC
+				s.id, s.seller_id,
+				COALESCE(s.name::text, '{}')::jsonb,
+				COALESCE(s.description::text, '{}')::jsonb,
+				COALESCE(s.address::text, '{}')::jsonb,
+				COALESCE(s.slug, ''), COALESCE(s.logo_url, ''), COALESCE(s.banner_url, ''),
+				COALESCE(s.phone, ''), s.latitude, s.longitude, s.region_id,
+				COALESCE(s.working_hours::text, '{}')::jsonb,
+				s.is_active, s.is_verified, s.is_main, s.rating,
+				s.created_at, s.updated_at
+			FROM shops s
+			WHERE s.seller_id = $1
+			ORDER BY s.is_main DESC, s.created_at DESC
 		`
 
 		shopsRows, err := db.Query(shopsQuery, sellerID)
