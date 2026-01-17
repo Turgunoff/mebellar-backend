@@ -565,10 +565,13 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Convert to CreateSellerProfileRequest
-		var req models.CreateSellerProfileRequest
-		if shopName, ok := rawReq["shop_name"].(string); ok {
-			req.ShopName = shopName
+		// Parse request - accept both old format (shop_name, support_phone) and new format (name, phone)
+		var nameStr string
+		if nameRaw, ok := rawReq["name"].(string); ok {
+			nameStr = nameRaw
+		} else if shopNameRaw, ok := rawReq["shop_name"].(string); ok {
+			// Backward compatibility
+			nameStr = shopNameRaw
 		} else {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
@@ -576,63 +579,61 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			})
 			return
 		}
-		if desc, ok := rawReq["description"].(string); ok {
-			req.Description = desc
+
+		if strings.TrimSpace(nameStr) == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon nomi kiritilishi shart",
+			})
+			return
 		}
-		if phone, ok := rawReq["support_phone"].(string); ok {
-			req.SupportPhone = phone
+
+		// Get phone - accept both formats
+		var phoneStr string
+		if phoneRaw, ok := rawReq["phone"].(string); ok {
+			phoneStr = phoneRaw
+		} else if supportPhoneRaw, ok := rawReq["support_phone"].(string); ok {
+			phoneStr = supportPhoneRaw
+		}
+
+		// Get description
+		var descStr string
+		if descRaw, ok := rawReq["description"].(string); ok {
+			descStr = descRaw
+		}
+
+		// Prepare name as JSONB (convert string to {"uz": "value"})
+		nameMap := models.StringMap{"uz": nameStr}
+		
+		// Prepare description as JSONB
+		descMap := models.StringMap{}
+		if descStr != "" {
+			descMap["uz"] = descStr
 		}
 
 		// Handle address - can be string or JSONB object (for backward compatibility)
+		addrMap := models.StringMap{}
 		if addrRaw, ok := rawReq["address"]; ok && addrRaw != nil {
 			switch v := addrRaw.(type) {
 			case string:
 				// Plain string from Flutter - convert to JSONB with uz key
 				if v != "" {
-					addrMap := models.StringMap{"uz": v}
-					req.Address = &addrMap
+					addrMap["uz"] = v
 				}
 			case map[string]interface{}:
 				// Already JSONB object
-				addrMap := make(models.StringMap)
 				for k, val := range v {
 					if str, ok := val.(string); ok {
 						addrMap[k] = str
 					}
 				}
-				if len(addrMap) > 0 {
-					req.Address = &addrMap
-				}
-			}
-		}
-
-		// Handle social_links
-		if socialLinksRaw, ok := rawReq["social_links"]; ok {
-			if socialLinksMap, ok := socialLinksRaw.(map[string]interface{}); ok {
-				var socialLinks models.SocialLinks
-				if inst, ok := socialLinksMap["instagram"].(string); ok {
-					socialLinks.Instagram = inst
-				}
-				if tg, ok := socialLinksMap["telegram"].(string); ok {
-					socialLinks.Telegram = tg
-				}
-				if fb, ok := socialLinksMap["facebook"].(string); ok {
-					socialLinks.Facebook = fb
-				}
-				if web, ok := socialLinksMap["website"].(string); ok {
-					socialLinks.Website = web
-				}
-				if yt, ok := socialLinksMap["youtube"].(string); ok {
-					socialLinks.YouTube = yt
-				}
-				req.SocialLinks = socialLinks
 			}
 		}
 
 		// Handle working_hours
+		var workingHours models.WorkingHours
 		if workingHoursRaw, ok := rawReq["working_hours"]; ok {
 			if workingHoursMap, ok := workingHoursRaw.(map[string]interface{}); ok {
-				var workingHours models.WorkingHours
 				dayNames := []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
 				for _, dayName := range dayNames {
 					if dayData, ok := workingHoursMap[dayName].(map[string]interface{}); ok {
@@ -664,75 +665,97 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 						}
 					}
 				}
-				req.WorkingHours = workingHours
 			}
 		}
 
-		// Validatsiya
-		if strings.TrimSpace(req.ShopName) == "" {
+		// Get seller_id from seller_profiles table
+		var sellerID string
+		err := db.QueryRow(`SELECT id FROM seller_profiles WHERE user_id = $1`, userID).Scan(&sellerID)
+		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
-				Message: "Do'kon nomi kiritilishi shart",
+				Message: "Sotuvchi profili topilmadi. Avval profil yarating",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("CreateShop: Error getting seller_id: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon yaratishda xatolik",
 			})
 			return
 		}
 
-		// Slug yaratish
-		slug := models.GenerateSlug(req.ShopName)
+		// Generate slug from name
+		slug := models.GenerateSlugFromName(nameMap)
+		if slug == "" {
+			slug = models.GenerateSlug(nameStr) // Fallback to old method
+		}
 
-		// Slug unikal ekanligini tekshirish
+		// Check if slug is unique, if not make it unique
 		var existingSlug string
-		slugCheckErr := db.QueryRow(`SELECT slug FROM seller_profiles WHERE slug = $1`, slug).Scan(&existingSlug)
+		slugCheckErr := db.QueryRow(`SELECT slug FROM shops WHERE slug = $1`, slug).Scan(&existingSlug)
 		if slugCheckErr == nil {
-			// Slug mavjud, unikal qilish
+			// Slug exists, make it unique
 			var count int
-			db.QueryRow(`SELECT COUNT(*) FROM seller_profiles WHERE slug LIKE $1`, slug+"%").Scan(&count)
+			db.QueryRow(`SELECT COUNT(*) FROM shops WHERE slug LIKE $1`, slug+"%").Scan(&count)
 			slug = slug + "-" + string(rune('0'+count+1))
 		}
 
-		// Social links va working hours ni JSON ga aylantirish
-		socialLinksJSON, _ := json.Marshal(req.SocialLinks)
-		workingHoursJSON, _ := json.Marshal(req.WorkingHours)
-		
-		// Address ni JSONB ga aylantirish
-		var addressValue []byte
-		if req.Address != nil {
-			addressValue, _ = json.Marshal(*req.Address)
-		} else {
-			addressValue = []byte("{}")
+		// Check if this is the first shop for this seller (to set is_main)
+		var shopCount int
+		db.QueryRow(`SELECT COUNT(*) FROM shops WHERE seller_id = $1`, sellerID).Scan(&shopCount)
+		isMain := shopCount == 0
+
+		// Prepare JSONB values
+		nameValue, _ := json.Marshal(nameMap)
+		descValue, _ := json.Marshal(descMap)
+		if len(descMap) == 0 {
+			descValue = []byte("{}")
+		}
+		addrValue, _ := json.Marshal(addrMap)
+		if len(addrMap) == 0 {
+			addrValue = []byte("{}")
+		}
+		workingHoursValue, _ := json.Marshal(workingHours)
+		if workingHoursValue == nil || len(workingHoursValue) == 0 {
+			workingHoursValue = []byte("{}")
 		}
 
-		// Do'konni yaratish
-		var shop models.SellerProfile
-		var addressJSONB models.StringMap
+		// Insert into shops table
+		var shop models.Shop
+		var nameJSONB, descJSONB, addrJSONB models.StringMap
 		query := `
-			INSERT INTO seller_profiles (
-				user_id, shop_name, slug, description,
-				support_phone, address, social_links, working_hours
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-			RETURNING id, user_id, shop_name, slug, COALESCE(description, ''),
+			INSERT INTO shops (
+				seller_id, name, description, address, slug,
+				phone, working_hours, is_active, is_main
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			RETURNING 
+				id, seller_id, name, description, address, slug,
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
-				COALESCE(support_phone, ''), COALESCE(address::text, '{}')::jsonb,
-				latitude, longitude,
-				COALESCE(social_links::text, '{}')::jsonb,
+				COALESCE(phone, ''), latitude, longitude, region_id,
 				COALESCE(working_hours::text, '{}')::jsonb,
-				is_verified, rating, created_at, updated_at
+				is_active, is_verified, is_main, rating,
+				created_at, updated_at
 		`
 
-		err := db.QueryRow(
+		err = db.QueryRow(
 			query,
-			userID, req.ShopName, slug, req.Description,
-			req.SupportPhone, addressValue, socialLinksJSON, workingHoursJSON,
+			sellerID, nameValue, descValue, addrValue, slug,
+			phoneStr, workingHoursValue, true, isMain,
 		).Scan(
-			&shop.ID, &shop.UserID, &shop.ShopName, &shop.Slug, &shop.Description,
+			&shop.ID, &shop.SellerID, &nameJSONB, &descJSONB, &addrJSONB, &shop.Slug,
 			&shop.LogoURL, &shop.BannerURL,
-			&shop.SupportPhone, &addressJSONB,
-			&shop.Latitude, &shop.Longitude,
-			&shop.SocialLinks, &shop.WorkingHours,
-			&shop.IsVerified, &shop.Rating, &shop.CreatedAt, &shop.UpdatedAt,
+			&shop.Phone, &shop.Latitude, &shop.Longitude, &shop.RegionID,
+			&shop.WorkingHours,
+			&shop.IsActive, &shop.IsVerified, &shop.IsMain, &shop.Rating,
+			&shop.CreatedAt, &shop.UpdatedAt,
 		)
 		if err == nil {
-			shop.Address = addressJSONB
+			shop.Name = nameJSONB
+			shop.Description = descJSONB
+			shop.Address = addrJSONB
 		}
 
 		if err != nil {
@@ -744,12 +767,13 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("🏪 New shop created: %s (ID: %s) by user %s", shop.ShopName, shop.ID, userID)
+		log.Printf("🏪 New shop created: %s (ID: %s) by seller %s", shop.GetName("uz"), shop.ID, sellerID)
 
-		writeJSON(w, http.StatusCreated, models.SellerProfileResponse{
-			Success: true,
-			Message: "Do'kon muvaffaqiyatli yaratildi",
-			Profile: &shop,
+		// Return shop in response (convert to format Flutter expects)
+		writeJSON(w, http.StatusCreated, map[string]interface{}{
+			"success": true,
+			"message": "Do'kon muvaffaqiyatli yaratildi",
+			"shop":    shop,
 		})
 	}
 }
