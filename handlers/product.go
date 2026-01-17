@@ -50,7 +50,7 @@ func GetProducts(db *sql.DB) http.HandlerFunc {
 		// SQL so'rov yaratish
 		query := `
 			SELECT 
-				id, shop_id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, COALESCE(name::text, '{}')::jsonb, COALESCE(description::text, '{}')::jsonb, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -96,11 +96,16 @@ func GetProducts(db *sql.DB) http.HandlerFunc {
 		products := []models.Product{}
 		for rows.Next() {
 			var p models.Product
+			var nameJSONB, descJSONB models.StringMap
 			err := rows.Scan(
-				&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.ID, &p.ShopID, &p.CategoryID, &nameJSONB, &descJSONB, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 			)
+			if err == nil {
+				p.Name = nameJSONB
+				p.Description = descJSONB
+			}
 			if err != nil {
 				log.Printf("Product scan xatosi: %v", err)
 				continue
@@ -161,7 +166,7 @@ func GetProductByID(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT 
-				id, shop_id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, COALESCE(name::text, '{}')::jsonb, COALESCE(description::text, '{}')::jsonb, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -170,11 +175,16 @@ func GetProductByID(db *sql.DB) http.HandlerFunc {
 		`
 
 		var p models.Product
+		var nameJSONB, descJSONB models.StringMap
 		err := db.QueryRow(query, productID).Scan(
-			&p.ID, &p.ShopID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+			&p.ID, &p.ShopID, &p.CategoryID, &nameJSONB, &descJSONB, &p.Price, &p.DiscountPrice,
 			&p.Images, &p.Specs, &p.Variants,
 			&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 		)
+		if err == nil {
+			p.Name = nameJSONB
+			p.Description = descJSONB
+		}
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -223,7 +233,7 @@ func GetNewArrivals(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT 
-				id, shop_id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, COALESCE(name::text, '{}')::jsonb, COALESCE(description::text, '{}')::jsonb, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -247,11 +257,16 @@ func GetNewArrivals(db *sql.DB) http.HandlerFunc {
 		products := []models.Product{}
 		for rows.Next() {
 			var p models.Product
+			var nameJSONB, descJSONB models.StringMap
 			err := rows.Scan(
-				&p.ID, &p.ShopID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.ID, &p.ShopID, &p.CategoryID, &nameJSONB, &descJSONB, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 			)
+			if err == nil {
+				p.Name = nameJSONB
+				p.Description = descJSONB
+			}
 			if err != nil {
 				log.Printf("Product scan xatosi: %v", err)
 				continue
@@ -291,7 +306,7 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 
 		query := `
 			SELECT 
-				id, shop_id, category_id, name, description, price, discount_price,
+				id, shop_id, category_id, COALESCE(name::text, '{}')::jsonb, COALESCE(description::text, '{}')::jsonb, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
@@ -315,11 +330,16 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 		products := []models.Product{}
 		for rows.Next() {
 			var p models.Product
+			var nameJSONB, descJSONB models.StringMap
 			err := rows.Scan(
-				&p.ID, &p.ShopID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.ID, &p.ShopID, &p.CategoryID, &nameJSONB, &descJSONB, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 			)
+			if err == nil {
+				p.Name = nameJSONB
+				p.Description = descJSONB
+			}
 			if err != nil {
 				log.Printf("Product scan xatosi: %v", err)
 				continue
@@ -574,6 +594,35 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		// Generate product ID
 		productID := uuid.New().String()
 
+		// Translate product name and description using Gemini AI
+		// Seller sends only Uzbek, we translate to Russian and English
+		nameMap := make(models.StringMap)
+		descMap := make(models.StringMap)
+		
+		// Set Uzbek values
+		nameMap["uz"] = name
+		if description != "" {
+			descMap["uz"] = description
+		} else {
+			descMap["uz"] = ""
+		}
+
+		// Call Gemini translation service
+		translatedName, translatedDesc, err := translator.TranslateProduct(name, description)
+		if err != nil {
+			log.Printf("⚠️ Translation xatosi (fallback to uz only): %v", err)
+			// Fallback: use only Uzbek if translation fails
+			nameMap["ru"] = name
+			nameMap["en"] = name
+			descMap["ru"] = description
+			descMap["en"] = description
+		} else {
+			// Use translated values
+			nameMap = translatedName
+			descMap = translatedDesc
+			log.Printf("✅ Tarjima muvaffaqiyatli: %s -> ru:%s, en:%s", name, nameMap["ru"], nameMap["en"])
+		}
+
 		// Insert into database
 		query := `
 			INSERT INTO products (
@@ -596,6 +645,8 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		specsValue, _ := specs.Value()
 		variantsValue, _ := variants.Value()
 		deliveryValue, _ := deliverySettings.Value()
+		nameValue, _ := nameMap.Value()
+		descValue, _ := descMap.Value()
 
 		var insertedID string
 		err = db.QueryRow(
@@ -603,8 +654,8 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			productID,
 			shopID,
 			categoryIDPtr,
-			name,
-			description,
+			nameValue,
+			descValue,
 			price,
 			discountPrice,
 			fmt.Sprintf("{%s}", strings.Join(quoteStrings(imageURLs), ",")),
@@ -631,8 +682,8 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		product := models.Product{
 			ID:               insertedID,
 			CategoryID:       categoryIDPtr,
-			Name:             name,
-			Description:      description,
+			Name:             nameMap,
+			Description:      descMap,
 			Price:            price,
 			DiscountPrice:    discountPrice,
 			Images:           imageURLs,
@@ -730,7 +781,7 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 		countQuery := `SELECT COUNT(*) FROM products WHERE shop_id = $1`
 		dataQuery := `
 			SELECT 
-				id, category_id, name, description, price, discount_price,
+				id, category_id, COALESCE(name::text, '{}')::jsonb, COALESCE(description::text, '{}')::jsonb, price, discount_price,
 				COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
 				COALESCE(variants::text, '[]')::jsonb,
 				COALESCE(delivery_settings::text, '{}')::jsonb,
@@ -799,12 +850,17 @@ func GetSellerProducts(db *sql.DB) http.HandlerFunc {
 		products := []models.Product{}
 		for rows.Next() {
 			var p models.Product
+			var nameJSONB, descJSONB models.StringMap
 			err := rows.Scan(
-				&p.ID, &p.CategoryID, &p.Name, &p.Description, &p.Price, &p.DiscountPrice,
+				&p.ID, &p.CategoryID, &nameJSONB, &descJSONB, &p.Price, &p.DiscountPrice,
 				&p.Images, &p.Specs, &p.Variants, &p.DeliverySettings,
 				&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
 				&p.ViewCount, &p.SoldCount,
 			)
+			if err == nil {
+				p.Name = nameJSONB
+				p.Description = descJSONB
+			}
 			if err != nil {
 				log.Printf("Product scan xatosi: %v", err)
 				continue
@@ -1065,10 +1121,40 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
+		// Translate product name and description using Gemini AI (if provided)
+		nameMap := make(models.StringMap)
+		descMap := make(models.StringMap)
+		
+		// Set Uzbek values
+		nameMap["uz"] = name
+		if description != "" {
+			descMap["uz"] = description
+		} else {
+			descMap["uz"] = ""
+		}
+
+		// Call Gemini translation service
+		translatedName, translatedDesc, err := translator.TranslateProduct(name, description)
+		if err != nil {
+			log.Printf("⚠️ Translation xatosi (fallback to uz only): %v", err)
+			// Fallback: use only Uzbek if translation fails
+			nameMap["ru"] = name
+			nameMap["en"] = name
+			descMap["ru"] = description
+			descMap["en"] = description
+		} else {
+			// Use translated values
+			nameMap = translatedName
+			descMap = translatedDesc
+			log.Printf("✅ Tarjima muvaffaqiyatli: %s -> ru:%s, en:%s", name, nameMap["ru"], nameMap["en"])
+		}
+
 		// Convert specs and variants to JSONB values
 		specsValue, _ := json.Marshal(specs)
 		variantsValue, _ := json.Marshal(variants)
 		deliveryValue, _ := json.Marshal(deliverySettings)
+		nameValue, _ := nameMap.Value()
+		descValue, _ := descMap.Value()
 
 		// Update product (including is_active to preserve state)
 		query := `
@@ -1092,8 +1178,8 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 		var updatedID string
 		err = db.QueryRow(
 			query,
-			name,
-			description,
+			nameValue,
+			descValue,
 			price,
 			discountPrice,
 			categoryIDPtr,
@@ -1127,8 +1213,8 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 		product := models.Product{
 			ID:               updatedID,
 			CategoryID:       categoryIDPtr,
-			Name:             name,
-			Description:      description,
+			Name:             nameMap,
+			Description:      descMap,
 			Price:            price,
 			DiscountPrice:    discountPricePtr,
 			Images:           pq.StringArray(imageURLs),

@@ -59,8 +59,10 @@ Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descU
 	// Extract text from response
 	var responseText string
 	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-		if textPart, ok := resp.Candidates[0].Content.Parts[0].(genai.Text); ok {
-			responseText = string(textPart)
+		for _, part := range resp.Candidates[0].Content.Parts {
+			if textPart, ok := part.(genai.Text); ok {
+				responseText += string(textPart)
+			}
 		}
 	}
 
