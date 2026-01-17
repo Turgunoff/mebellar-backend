@@ -201,7 +201,7 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// CreateShop godoc
+// CreateShopAdmin godoc
 // @Summary      Yangi do'kon yaratish (Admin)
 // @Description  Admin tomonidan yangi do'kon yaratish
 // @Tags         admin
@@ -214,7 +214,7 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 // @Failure      500  {object}  models.AuthResponse
 // @Security     BearerAuth
 // @Router       /admin/shops [post]
-func CreateShop(db *sql.DB) http.HandlerFunc {
+func CreateShopAdmin(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
@@ -322,11 +322,11 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		
 		// Set Uzbek values
 		nameMap["uz"] = req.Name["uz"]
-		if req.Description != nil && req.Description["uz"] != "" {
-			descMap["uz"] = req.Description["uz"]
+		if req.Description != nil && (*req.Description)["uz"] != "" {
+			descMap["uz"] = (*req.Description)["uz"]
 		}
-		if req.Address != nil && req.Address["uz"] != "" {
-			addrMap["uz"] = req.Address["uz"]
+		if req.Address != nil && (*req.Address)["uz"] != "" {
+			addrMap["uz"] = (*req.Address)["uz"]
 		}
 
 		// Call Gemini translation service
@@ -367,18 +367,18 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		}
 
 		// JSONB maydonlarni tayyorlash
-		nameValue, _ := nameMap.Value()
-		descValue := []byte("{}")
-		if len(descMap) > 0 {
-			descValue, _ = descMap.Value()
+		nameValue, _ := json.Marshal(nameMap)
+		descValue, _ := json.Marshal(descMap)
+		if len(descMap) == 0 {
+			descValue = []byte("{}")
 		}
-		addrValue := []byte("{}")
-		if len(addrMap) > 0 {
-			addrValue, _ = addrMap.Value()
+		addrValue, _ := json.Marshal(addrMap)
+		if len(addrMap) == 0 {
+			addrValue = []byte("{}")
 		}
 		workingHoursValue := []byte("{}")
 		if req.WorkingHours != nil {
-			workingHoursValue, _ = req.WorkingHours.Value()
+			workingHoursValue, _ = json.Marshal(req.WorkingHours)
 		}
 
 		// Do'konni yaratish
@@ -440,7 +440,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// UpdateShop godoc
+// UpdateShopAdmin godoc
 // @Summary      Do'konni yangilash (Admin)
 // @Description  Do'kon ma'lumotlarini yangilash
 // @Tags         admin
@@ -455,7 +455,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 // @Failure      500  {object}  models.AuthResponse
 // @Security     BearerAuth
 // @Router       /admin/shops/{id} [put]
-func UpdateShop(db *sql.DB) http.HandlerFunc {
+func UpdateShopAdmin(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPut {
 			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
@@ -521,7 +521,7 @@ func UpdateShop(db *sql.DB) http.HandlerFunc {
 		argIndex := 1
 
 		if req.Name != nil {
-			nameValue, _ := req.Name.Value()
+			nameValue, _ := json.Marshal(*req.Name)
 			updates = append(updates, fmt.Sprintf("name = $%d", argIndex))
 			args = append(args, nameValue)
 			argIndex++
@@ -543,13 +543,13 @@ func UpdateShop(db *sql.DB) http.HandlerFunc {
 			}
 		}
 		if req.Description != nil {
-			descValue, _ := req.Description.Value()
+			descValue, _ := json.Marshal(*req.Description)
 			updates = append(updates, fmt.Sprintf("description = $%d", argIndex))
 			args = append(args, descValue)
 			argIndex++
 		}
 		if req.Address != nil {
-			addrValue, _ := req.Address.Value()
+			addrValue, _ := json.Marshal(*req.Address)
 			updates = append(updates, fmt.Sprintf("address = $%d", argIndex))
 			args = append(args, addrValue)
 			argIndex++
@@ -585,7 +585,7 @@ func UpdateShop(db *sql.DB) http.HandlerFunc {
 			argIndex++
 		}
 		if req.WorkingHours != nil {
-			workingHoursValue, _ := req.WorkingHours.Value()
+			workingHoursValue, _ := json.Marshal(req.WorkingHours)
 			updates = append(updates, fmt.Sprintf("working_hours = $%d", argIndex))
 			args = append(args, workingHoursValue)
 			argIndex++
@@ -751,7 +751,7 @@ func AdminShopsHandler(db *sql.DB) http.HandlerFunc {
 		case http.MethodGet:
 			ListShops(db)(w, r)
 		case http.MethodPost:
-			CreateShop(db)(w, r)
+			CreateShopAdmin(db)(w, r)
 		default:
 			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
 				Success: false,
@@ -772,7 +772,7 @@ func AdminShopItemHandler(db *sql.DB) http.HandlerFunc {
 		} else if path != "" {
 			switch r.Method {
 			case http.MethodPut:
-				UpdateShop(db)(w, r)
+				UpdateShopAdmin(db)(w, r)
 			default:
 				writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
 					Success: false,
