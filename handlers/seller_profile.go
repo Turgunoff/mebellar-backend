@@ -466,21 +466,42 @@ func GetMyShops(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Get seller_id from seller_profiles first
+		var sellerID string
+		err := db.QueryRow(`SELECT id FROM seller_profiles WHERE user_id = $1`, userID).Scan(&sellerID)
+		if err == sql.ErrNoRows {
+			// No seller profile yet, return empty list
+			writeJSON(w, http.StatusOK, map[string]interface{}{
+				"success": true,
+				"shops":   []interface{}{},
+				"count":   0,
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("GetMyShops: Error getting seller_id: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Do'konlarni olishda xatolik",
+			})
+			return
+		}
+
+		// Query shops from shops table
 		query := `
 			SELECT 
-				id, user_id, shop_name, COALESCE(slug, ''), COALESCE(description, ''),
+				id, seller_id, name, description, address, slug,
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
-				COALESCE(support_phone, ''), COALESCE(address::text, '{}')::jsonb,
-				latitude, longitude,
-				COALESCE(social_links::text, '{}')::jsonb,
+				COALESCE(phone, ''), latitude, longitude, region_id,
 				COALESCE(working_hours::text, '{}')::jsonb,
-				is_verified, rating, created_at, updated_at
-			FROM seller_profiles
-			WHERE user_id = $1
+				is_active, is_verified, is_main, rating,
+				created_at, updated_at
+			FROM shops
+			WHERE seller_id = $1
 			ORDER BY created_at DESC
 		`
 
-		rows, err := db.Query(query, userID)
+		rows, err := db.Query(query, sellerID)
 		if err != nil {
 			log.Printf("GetMyShops query error: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -491,20 +512,22 @@ func GetMyShops(db *sql.DB) http.HandlerFunc {
 		}
 		defer rows.Close()
 
-		var shops []models.SellerProfile
+		var shops []models.Shop
 		for rows.Next() {
-			var shop models.SellerProfile
-			var addressJSONB models.StringMap
+			var shop models.Shop
+			var nameJSONB, descJSONB, addrJSONB models.StringMap
 			err := rows.Scan(
-				&shop.ID, &shop.UserID, &shop.ShopName, &shop.Slug, &shop.Description,
+				&shop.ID, &shop.SellerID, &nameJSONB, &descJSONB, &addrJSONB, &shop.Slug,
 				&shop.LogoURL, &shop.BannerURL,
-				&shop.SupportPhone, &addressJSONB,
-				&shop.Latitude, &shop.Longitude,
-				&shop.SocialLinks, &shop.WorkingHours,
-				&shop.IsVerified, &shop.Rating, &shop.CreatedAt, &shop.UpdatedAt,
+				&shop.Phone, &shop.Latitude, &shop.Longitude, &shop.RegionID,
+				&shop.WorkingHours,
+				&shop.IsActive, &shop.IsVerified, &shop.IsMain, &shop.Rating,
+				&shop.CreatedAt, &shop.UpdatedAt,
 			)
 			if err == nil {
-				shop.Address = addressJSONB
+				shop.Name = nameJSONB
+				shop.Description = descJSONB
+				shop.Address = addrJSONB
 			}
 			if err != nil {
 				log.Printf("GetMyShops scan error: %v", err)
@@ -668,17 +691,42 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			}
 		}
 
-		// Get seller_id from seller_profiles table
+		// Get seller_id from seller_profiles table, or create if doesn't exist
 		var sellerID string
 		err := db.QueryRow(`SELECT id FROM seller_profiles WHERE user_id = $1`, userID).Scan(&sellerID)
 		if err == sql.ErrNoRows {
-			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-				Success: false,
-				Message: "Sotuvchi profili topilmadi. Avval profil yarating",
-			})
-			return
-		}
-		if err != nil {
+			// Auto-create seller profile for new users
+			log.Printf("CreateShop: No seller profile found for user %s, creating one...", userID)
+			
+			// Get user's full_name to use as legal_name
+			var userFullName string
+			err := db.QueryRow(`SELECT COALESCE(full_name, '') FROM users WHERE id = $1`, userID).Scan(&userFullName)
+			if err != nil {
+				log.Printf("CreateShop: Error getting user full_name: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Foydalanuvchi ma'lumotlarini olishda xatolik",
+				})
+				return
+			}
+
+			// Create seller profile
+			err = db.QueryRow(
+				`INSERT INTO seller_profiles (user_id, legal_name, is_verified, created_at, updated_at)
+				 VALUES ($1, $2, $3, NOW(), NOW())
+				 RETURNING id`,
+				userID, userFullName, false,
+			).Scan(&sellerID)
+			if err != nil {
+				log.Printf("CreateShop: Error creating seller profile: %v", err)
+				writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+					Success: false,
+					Message: "Sotuvchi profilini yaratishda xatolik",
+				})
+				return
+			}
+			log.Printf("✅ Created seller profile %s for user %s", sellerID, userID)
+		} else if err != nil {
 			log.Printf("CreateShop: Error getting seller_id: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
 				Success: false,
