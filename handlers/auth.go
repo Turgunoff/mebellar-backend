@@ -337,8 +337,8 @@ func Register(db *sql.DB) http.HandlerFunc {
 		if role == "" {
 			role = "customer"
 		}
-		// Faqat ruxsat etilgan role'lar
-		if role != "customer" && role != "seller" && role != "admin" {
+		// Faqat ruxsat etilgan role'lar (admin va moderator faqat migration orqali yaratiladi)
+		if role != "customer" && role != "seller" {
 			role = "customer"
 		}
 

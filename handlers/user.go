@@ -156,9 +156,9 @@ func GetProfile(db *sql.DB) http.HandlerFunc {
 		// Bazadan foydalanuvchini olish
 		var user models.User
 		err := db.QueryRow(`
-			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), COALESCE(onesignal_id, ''), created_at, updated_at
+			SELECT id, full_name, phone, COALESCE(email, ''), COALESCE(avatar_url, ''), COALESCE(role, 'customer'), COALESCE(onesignal_id, ''), created_at, updated_at
 			FROM users WHERE id = $1
-		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.OneSignalID, &user.CreatedAt, &user.UpdatedAt)
+		`, userID).Scan(&user.ID, &user.FullName, &user.Phone, &user.Email, &user.AvatarURL, &user.Role, &user.OneSignalID, &user.CreatedAt, &user.UpdatedAt)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{

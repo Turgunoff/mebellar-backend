@@ -227,6 +227,12 @@ func main() {
 	http.HandleFunc("/api/common/cancellation-reasons", corsMiddleware(handlers.GetCancellationReasons(db)))
 
 	// ============================================
+	// ADMIN ENDPOINTS (Role-Based Access Control)
+	// ============================================
+	// Admin dashboard statistikasi (admin va moderator)
+	http.HandleFunc("/api/admin/dashboard-stats", corsMiddleware(handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminDashboardStats(db))))
+
+	// ============================================
 	// DEBUG ENDPOINTS
 	// ============================================
 	// Test buyurtmalarini yaratish
@@ -313,6 +319,9 @@ func main() {
 	fmt.Println("")
 	fmt.Println("📋 Common endpoints (Ommaviy):")
 	fmt.Println("   GET /api/common/cancellation-reasons - Bekor qilish sabablari")
+	fmt.Println("")
+	fmt.Println("👑 Admin endpoints (Admin/Moderator):")
+	fmt.Println("   GET /api/admin/dashboard-stats - Dashboard statistikasi")
 	fmt.Println("")
 	fmt.Println("🔧 Debug endpoints (JWT himoyalangan):")
 	fmt.Println("   POST /api/debug/seed-orders?count=10 - Test buyurtmalar yaratish")
