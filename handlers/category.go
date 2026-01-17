@@ -172,7 +172,7 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 	})
 }
 
-// getFlatCategories - barcha kategoriyalarni tekis ro'yxatda olish
+// getFlatCategories - barcha kategoriyalarni tekis ro'yxatda olish (faqat faol kategoriyalar)
 func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	query := `
 		SELECT 
@@ -180,6 +180,7 @@ func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 			COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
+		WHERE c.is_active = true
 		ORDER BY c.sort_order ASC, c.parent_id NULLS FIRST, c.name ASC
 	`
 
@@ -212,6 +213,79 @@ func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 		Categories: categories,
 		Count:      len(categories),
 	})
+}
+
+// GetAdminCategories godoc
+// @Summary      Barcha kategoriyalarni olish (Admin uchun - faol va nofaol)
+// @Description  Admin panel uchun barcha kategoriyalarni tekis ro'yxatda qaytaradi (is_active filter yo'q)
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  models.CategoriesResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /admin/categories/list [get]
+func GetAdminCategories(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// User Role middleware dan olingan
+		userRole := r.Header.Get("X-User-Role")
+		if userRole != "admin" && userRole != "moderator" {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu sahifaga kirish huquqingiz yo'q",
+			})
+			return
+		}
+
+		// Barcha kategoriyalarni olish (faol va nofaol)
+		query := `
+			SELECT 
+				c.id, c.parent_id, c.name, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+				COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
+				(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
+			FROM categories c
+			ORDER BY c.sort_order ASC, c.created_at DESC, c.name ASC
+		`
+
+		rows, err := db.Query(query)
+		if err != nil {
+			log.Printf("AdminCategories query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Kategoriyalarni olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		categories := []models.Category{}
+		for rows.Next() {
+			var c models.Category
+			err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+			if err != nil {
+				log.Printf("Category scan xatosi: %v", err)
+				continue
+			}
+			categories = append(categories, c)
+		}
+
+		log.Printf("✅ %d ta kategoriya topildi (admin - barcha)", len(categories))
+
+		writeJSON(w, http.StatusOK, models.CategoriesResponse{
+			Success:    true,
+			Categories: categories,
+			Count:      len(categories),
+		})
+	}
 }
 
 // GetCategoryByID godoc

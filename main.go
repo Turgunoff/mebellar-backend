@@ -153,6 +153,7 @@ func main() {
 	// --- Admin (Protected: Admin/Moderator Only) ---
 	http.HandleFunc("/api/admin/dashboard-stats", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminDashboardStats(db)))
 	http.HandleFunc("/api/admin/users", handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db)))
+	http.HandleFunc("/api/admin/categories/list", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminCategories(db)))
 	http.HandleFunc("/api/admin/categories", handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db)))
 	http.HandleFunc("/api/admin/categories/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db)))
 
