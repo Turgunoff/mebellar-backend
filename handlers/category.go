@@ -704,7 +704,7 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("✅ Kategoriya yaratildi: %s (ID: %s)", name, insertedID)
+		log.Printf("✅ Kategoriya yaratildi: %s (ID: %s)", nameMap["uz"], insertedID)
 
 		// Yaratilgan kategoriyani qaytarish
 		var c models.Category
