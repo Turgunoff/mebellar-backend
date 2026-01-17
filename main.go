@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"mebellar-backend/handlers"
-	"mebellar-backend/pkg/seed"
 	"mebellar-backend/pkg/sms"
 	"mebellar-backend/pkg/websocket"
 
@@ -127,9 +126,6 @@ func main() {
 
 	// Users jadvalini yaratish (agar mavjud bo'lmasa)
 	createUsersTable(db)
-
-	// Kategoriyalar va mahsulotlarni seed qilish
-	seed.SeedAll(db)
 
 	// SMS Service (Eskiz.uz) sozlash
 	initSMSService()
