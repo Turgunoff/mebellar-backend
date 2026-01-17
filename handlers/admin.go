@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"database/sql"
-	"encoding/json"
 	"mebellar-backend/models"
 	"net/http"
 	"time"
