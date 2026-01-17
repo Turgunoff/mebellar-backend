@@ -593,7 +593,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		// Address ni JSONB ga aylantirish
 		var addressValue []byte
 		if req.Address != nil {
-			addressValue, _ = req.Address.Value()
+			addressValue, _ = json.Marshal(*req.Address)
 		} else {
 			addressValue = []byte("{}")
 		}
