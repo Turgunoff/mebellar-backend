@@ -8,12 +8,67 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"mebellar-backend/models"
 
 	"github.com/google/uuid"
 )
+
+// generateSlug - name dan slug yaratish (URL-friendly)
+// Masalan: "Yashash xonasi" -> "yashash-xonasi"
+func generateSlug(name string) string {
+	// Kichik harflarga o'tkazish
+	slug := strings.ToLower(name)
+	
+	// Maxsus belgilarni olib tashlash va bo'shliqlarni tire bilan almashtirish
+	reg := regexp.MustCompile(`[^a-z0-9\s-]`)
+	slug = reg.ReplaceAllString(slug, "")
+	
+	// Bo'shliqlarni tire bilan almashtirish
+	reg = regexp.MustCompile(`[\s]+`)
+	slug = reg.ReplaceAllString(slug, "-")
+	
+	// Boshida va oxirida tirelarni olib tashlash
+	slug = strings.Trim(slug, "-")
+	
+	// Agar slug bo'sh bo'lsa, default qiymat
+	if slug == "" {
+		slug = "category"
+	}
+	
+	return slug
+}
+
+// ensureUniqueSlug - slugning unique ekanligini ta'minlash
+func ensureUniqueSlug(db *sql.DB, baseSlug string, excludeID string) string {
+	slug := baseSlug
+	counter := 1
+	
+	for {
+		var exists bool
+		query := "SELECT EXISTS(SELECT 1 FROM categories WHERE slug = $1"
+		args := []interface{}{slug}
+		
+		if excludeID != "" {
+			query += " AND id != $2"
+			args = append(args, excludeID)
+		}
+		query += ")"
+		
+		err := db.QueryRow(query, args...).Scan(&exists)
+		if err != nil || !exists {
+			break
+		}
+		
+		slug = fmt.Sprintf("%s-%d", baseSlug, counter)
+		counter++
+	}
+	
+	return slug
+}
 
 // GetCategories godoc
 // @Summary      Barcha kategoriyalarni olish (daraxt ko'rinishida)
@@ -51,13 +106,15 @@ func GetCategories(db *sql.DB) http.HandlerFunc {
 
 // getNestedCategories - kategoriyalarni daraxt ko'rinishida olish
 func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
-	// Barcha kategoriyalarni olish
+	// Barcha kategoriyalarni olish (faqat faol kategoriyalar)
 	query := `
 		SELECT 
-			c.id, c.parent_id, c.name, COALESCE(c.icon_url, ''),
+			c.id, c.parent_id, c.name, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+			COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
-		ORDER BY c.name ASC
+		WHERE c.is_active = true
+		ORDER BY c.sort_order ASC, c.name ASC
 	`
 
 	rows, err := db.Query(query)
@@ -77,7 +134,7 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 
 	for rows.Next() {
 		var c models.Category
-		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
+		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 		if err != nil {
 			log.Printf("Category scan xatosi: %v", err)
 			continue
@@ -119,10 +176,11 @@ func getNestedCategories(db *sql.DB, w http.ResponseWriter) {
 func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	query := `
 		SELECT 
-			c.id, c.parent_id, c.name, COALESCE(c.icon_url, ''),
+			c.id, c.parent_id, c.name, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+			COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 		FROM categories c
-		ORDER BY c.parent_id NULLS FIRST, c.name ASC
+		ORDER BY c.sort_order ASC, c.parent_id NULLS FIRST, c.name ASC
 	`
 
 	rows, err := db.Query(query)
@@ -139,7 +197,7 @@ func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	categories := []models.Category{}
 	for rows.Next() {
 		var c models.Category
-		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
+		err := rows.Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 		if err != nil {
 			log.Printf("Category scan xatosi: %v", err)
 			continue
@@ -199,14 +257,15 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 
 		// Kategoriyani olish (sub-kategoriyalar bilan)
 		query := `
-			SELECT id, parent_id, name, COALESCE(icon_url, ''),
+			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE id = $1
 		`
 
 		var c models.Category
-		err := db.QueryRow(query, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
+		err := db.QueryRow(query, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -227,11 +286,12 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 
 		// Sub-kategoriyalarni olish
 		subQuery := `
-			SELECT id, parent_id, name, COALESCE(icon_url, ''),
+			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = sc.id AND p.is_active = true) as product_count
 			FROM categories sc
 			WHERE parent_id = $1
-			ORDER BY name ASC
+			ORDER BY sort_order ASC, name ASC
 		`
 
 		rows, err := db.Query(subQuery, categoryID)
@@ -240,7 +300,7 @@ func GetCategoryByID(db *sql.DB) http.HandlerFunc {
 			c.SubCategories = []models.Category{}
 			for rows.Next() {
 				var sub models.Category
-				if err := rows.Scan(&sub.ID, &sub.ParentID, &sub.Name, &sub.IconURL, &sub.ProductCount); err == nil {
+				if err := rows.Scan(&sub.ID, &sub.ParentID, &sub.Name, &sub.Slug, &sub.IconURL, &sub.IsActive, &sub.SortOrder, &sub.ProductCount); err == nil {
 					c.SubCategories = append(c.SubCategories, sub)
 				}
 			}
@@ -271,6 +331,8 @@ type CreateCategoryRequest struct {
 // @Param        name formData string true "Kategoriya nomi"
 // @Param        parent_id formData string false "Parent kategoriya ID"
 // @Param        icon formData file false "Kategoriya ikonasi (jpg, png)"
+// @Param        is_active formData boolean false "Kategoriya faolligi (default: true)"
+// @Param        sort_order formData integer false "Tartib raqami (default: 0)"
 // @Success      201  {object}  models.CategoryResponse
 // @Failure      400  {object}  models.AuthResponse
 // @Failure      403  {object}  models.AuthResponse
@@ -330,6 +392,26 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 					Message: "Parent kategoriya topilmadi",
 				})
 				return
+			}
+		}
+
+		// Slug yaratish (name dan avtomatik)
+		baseSlug := generateSlug(name)
+		slug := ensureUniqueSlug(db, baseSlug, "")
+
+		// is_active olish (default: true)
+		isActive := true
+		if isActiveStr := r.FormValue("is_active"); isActiveStr != "" {
+			if parsed, err := strconv.ParseBool(isActiveStr); err == nil {
+				isActive = parsed
+			}
+		}
+
+		// sort_order olish (default: 0)
+		sortOrder := 0
+		if sortOrderStr := r.FormValue("sort_order"); sortOrderStr != "" {
+			if parsed, err := strconv.Atoi(sortOrderStr); err == nil {
+				sortOrder = parsed
 			}
 		}
 
@@ -408,13 +490,13 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 
 		// Kategoriyani bazaga qo'shish
 		query := `
-			INSERT INTO categories (id, name, icon_url, parent_id, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, NOW(), NOW())
+			INSERT INTO categories (id, name, slug, icon_url, parent_id, is_active, sort_order, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
 			RETURNING id
 		`
 
 		var insertedID string
-		err = db.QueryRow(query, categoryID, name, iconURL, parentID).Scan(&insertedID)
+		err = db.QueryRow(query, categoryID, name, slug, iconURL, parentID, isActive, sortOrder).Scan(&insertedID)
 		if err != nil {
 			log.Printf("CreateCategory: Insert xatosi: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -429,11 +511,12 @@ func CreateCategory(db *sql.DB) http.HandlerFunc {
 		// Yaratilgan kategoriyani qaytarish
 		var c models.Category
 		err = db.QueryRow(`
-			SELECT id, parent_id, name, COALESCE(icon_url, ''),
+			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE id = $1
-		`, insertedID).Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
+		`, insertedID).Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 
 		if err != nil {
 			log.Printf("CreateCategory: Fetch xatosi: %v", err)
@@ -462,6 +545,8 @@ type UpdateCategoryRequest struct {
 // @Param        id path string true "Kategoriya ID"
 // @Param        name formData string false "Kategoriya nomi"
 // @Param        icon formData file false "Kategoriya ikonasi (jpg, png)"
+// @Param        is_active formData boolean false "Kategoriya faolligi"
+// @Param        sort_order formData integer false "Tartib raqami"
 // @Success      200  {object}  models.CategoryResponse
 // @Failure      400  {object}  models.AuthResponse
 // @Failure      403  {object}  models.AuthResponse
@@ -524,8 +609,29 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 
 		// Name olish (optional)
 		var name *string
+		var slug *string
 		if nameStr := strings.TrimSpace(r.FormValue("name")); nameStr != "" {
 			name = &nameStr
+			// Agar name o'zgarsa, slug ham yangilanadi
+			baseSlug := generateSlug(nameStr)
+			newSlug := ensureUniqueSlug(db, baseSlug, categoryID)
+			slug = &newSlug
+		}
+
+		// is_active olish (optional)
+		var isActive *bool
+		if isActiveStr := r.FormValue("is_active"); isActiveStr != "" {
+			if parsed, err := strconv.ParseBool(isActiveStr); err == nil {
+				isActive = &parsed
+			}
+		}
+
+		// sort_order olish (optional)
+		var sortOrder *int
+		if sortOrderStr := r.FormValue("sort_order"); sortOrderStr != "" {
+			if parsed, err := strconv.Atoi(sortOrderStr); err == nil {
+				sortOrder = &parsed
+			}
 		}
 
 		// Fayl yuklash (optional)
@@ -610,7 +716,7 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Hech narsa yangilanmayapti
-		if name == nil && iconURL == nil {
+		if name == nil && iconURL == nil && isActive == nil && sortOrder == nil {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Hech narsa o'zgartirilmadi",
@@ -627,11 +733,30 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 			updateFields = append(updateFields, fmt.Sprintf("name = $%d", argIndex))
 			args = append(args, *name)
 			argIndex++
+			
+			// Agar name o'zgarsa, slug ham yangilanadi
+			if slug != nil {
+				updateFields = append(updateFields, fmt.Sprintf("slug = $%d", argIndex))
+				args = append(args, *slug)
+				argIndex++
+			}
 		}
 
 		if iconURL != nil {
 			updateFields = append(updateFields, fmt.Sprintf("icon_url = $%d", argIndex))
 			args = append(args, *iconURL)
+			argIndex++
+		}
+
+		if isActive != nil {
+			updateFields = append(updateFields, fmt.Sprintf("is_active = $%d", argIndex))
+			args = append(args, *isActive)
+			argIndex++
+		}
+
+		if sortOrder != nil {
+			updateFields = append(updateFields, fmt.Sprintf("sort_order = $%d", argIndex))
+			args = append(args, *sortOrder)
 			argIndex++
 		}
 
@@ -655,11 +780,12 @@ func UpdateCategory(db *sql.DB) http.HandlerFunc {
 		// Yangilangan kategoriyani qaytarish
 		var c models.Category
 		err = db.QueryRow(`
-			SELECT id, parent_id, name, COALESCE(icon_url, ''),
+			SELECT id, parent_id, name, COALESCE(slug, ''), COALESCE(icon_url, ''),
+			COALESCE(is_active, true), COALESCE(sort_order, 0),
 			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE id = $1
-		`, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.IconURL, &c.ProductCount)
+		`, categoryID).Scan(&c.ID, &c.ParentID, &c.Name, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
 
 		if err != nil {
 			log.Printf("UpdateCategory: Fetch xatosi: %v", err)

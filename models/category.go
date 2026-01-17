@@ -6,7 +6,10 @@ type Category struct {
 	ID            string     `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
 	ParentID      *string    `json:"parent_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`
 	Name          string     `json:"name" example:"Yashash xonasi"`
+	Slug          string     `json:"slug" example:"yashash-xonasi"`
 	IconURL       string     `json:"icon_url" example:"https://img.icons8.com/fluency/96/living-room.png"`
+	IsActive      bool       `json:"is_active" example:"true"`
+	SortOrder     int        `json:"sort_order" example:"0"`
 	ProductCount  int        `json:"product_count,omitempty" example:"25"`
 	SubCategories []Category `json:"sub_categories,omitempty"`
 }
