@@ -30,13 +30,26 @@ func (s StringMap) Value() (driver.Value, error) {
 // Scan - database dan o'qish uchun
 func (s *StringMap) Scan(value interface{}) error {
 	if value == nil {
-		*s = nil
+		*s = make(StringMap)
 		return nil
 	}
 
-	bytes, ok := value.([]byte)
-	if !ok {
-		return errors.New("type assertion to []byte failed for StringMap")
+	var bytes []byte
+
+	// Handle both []byte and string types (PostgreSQL can return either)
+	switch v := value.(type) {
+	case []byte:
+		bytes = v
+	case string:
+		bytes = []byte(v)
+	default:
+		return errors.New("type assertion to []byte or string failed for StringMap")
+	}
+
+	// Handle empty JSON
+	if len(bytes) == 0 || string(bytes) == "{}" {
+		*s = make(StringMap)
+		return nil
 	}
 
 	return json.Unmarshal(bytes, s)
