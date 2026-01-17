@@ -1,7 +1,5 @@
 package models
 
-import "encoding/json"
-
 // Category - kategoriya modeli
 // @Description Mahsulot kategoriyasi
 type Category struct {
