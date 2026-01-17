@@ -555,13 +555,117 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		var req models.CreateSellerProfileRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Parse request body manually to handle address as both string and JSONB
+		var rawReq map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&rawReq); err != nil {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Noto'g'ri so'rov formati",
 			})
 			return
+		}
+
+		// Convert to CreateSellerProfileRequest
+		var req models.CreateSellerProfileRequest
+		if shopName, ok := rawReq["shop_name"].(string); ok {
+			req.ShopName = shopName
+		} else {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon nomi kiritilishi shart",
+			})
+			return
+		}
+		if desc, ok := rawReq["description"].(string); ok {
+			req.Description = desc
+		}
+		if phone, ok := rawReq["support_phone"].(string); ok {
+			req.SupportPhone = phone
+		}
+
+		// Handle address - can be string or JSONB object (for backward compatibility)
+		if addrRaw, ok := rawReq["address"]; ok && addrRaw != nil {
+			switch v := addrRaw.(type) {
+			case string:
+				// Plain string from Flutter - convert to JSONB with uz key
+				if v != "" {
+					addrMap := models.StringMap{"uz": v}
+					req.Address = &addrMap
+				}
+			case map[string]interface{}:
+				// Already JSONB object
+				addrMap := make(models.StringMap)
+				for k, val := range v {
+					if str, ok := val.(string); ok {
+						addrMap[k] = str
+					}
+				}
+				if len(addrMap) > 0 {
+					req.Address = &addrMap
+				}
+			}
+		}
+
+		// Handle social_links
+		if socialLinksRaw, ok := rawReq["social_links"]; ok {
+			if socialLinksMap, ok := socialLinksRaw.(map[string]interface{}); ok {
+				var socialLinks models.SocialLinks
+				if inst, ok := socialLinksMap["instagram"].(string); ok {
+					socialLinks.Instagram = inst
+				}
+				if tg, ok := socialLinksMap["telegram"].(string); ok {
+					socialLinks.Telegram = tg
+				}
+				if fb, ok := socialLinksMap["facebook"].(string); ok {
+					socialLinks.Facebook = fb
+				}
+				if web, ok := socialLinksMap["website"].(string); ok {
+					socialLinks.Website = web
+				}
+				if yt, ok := socialLinksMap["youtube"].(string); ok {
+					socialLinks.YouTube = yt
+				}
+				req.SocialLinks = socialLinks
+			}
+		}
+
+		// Handle working_hours
+		if workingHoursRaw, ok := rawReq["working_hours"]; ok {
+			if workingHoursMap, ok := workingHoursRaw.(map[string]interface{}); ok {
+				var workingHours models.WorkingHours
+				dayNames := []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+				for _, dayName := range dayNames {
+					if dayData, ok := workingHoursMap[dayName].(map[string]interface{}); ok {
+						schedule := &models.DaySchedule{}
+						if open, ok := dayData["open"].(string); ok {
+							schedule.Open = open
+						}
+						if close, ok := dayData["close"].(string); ok {
+							schedule.Close = close
+						}
+						if closed, ok := dayData["closed"].(bool); ok {
+							schedule.Closed = closed
+						}
+						switch dayName {
+						case "monday":
+							workingHours.Monday = schedule
+						case "tuesday":
+							workingHours.Tuesday = schedule
+						case "wednesday":
+							workingHours.Wednesday = schedule
+						case "thursday":
+							workingHours.Thursday = schedule
+						case "friday":
+							workingHours.Friday = schedule
+						case "saturday":
+							workingHours.Saturday = schedule
+						case "sunday":
+							workingHours.Sunday = schedule
+						}
+					}
+				}
+				req.WorkingHours = workingHours
+			}
 		}
 
 		// Validatsiya
@@ -819,13 +923,122 @@ func UpdateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		var req models.UpdateSellerProfileRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		// Parse request body manually to handle address as both string and JSONB
+		var rawReq map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&rawReq); err != nil {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Noto'g'ri so'rov formati",
 			})
 			return
+		}
+
+		var req models.UpdateSellerProfileRequest
+		if shopName, ok := rawReq["shop_name"].(string); ok {
+			req.ShopName = &shopName
+		}
+		if desc, ok := rawReq["description"].(string); ok {
+			req.Description = &desc
+		}
+		if logoURL, ok := rawReq["logo_url"].(string); ok {
+			req.LogoURL = &logoURL
+		}
+		if bannerURL, ok := rawReq["banner_url"].(string); ok {
+			req.BannerURL = &bannerURL
+		}
+		if phone, ok := rawReq["support_phone"].(string); ok {
+			req.SupportPhone = &phone
+		}
+		if lat, ok := rawReq["latitude"].(float64); ok {
+			req.Latitude = &lat
+		}
+		if lon, ok := rawReq["longitude"].(float64); ok {
+			req.Longitude = &lon
+		}
+
+		// Handle address - can be string or JSONB object
+		if addrRaw, ok := rawReq["address"]; ok && addrRaw != nil {
+			switch v := addrRaw.(type) {
+			case string:
+				// Plain string - convert to JSONB with uz key
+				if v != "" {
+					addrMap := models.StringMap{"uz": v}
+					req.Address = &addrMap
+				}
+			case map[string]interface{}:
+				// Already JSONB object
+				addrMap := make(models.StringMap)
+				for k, val := range v {
+					if str, ok := val.(string); ok {
+						addrMap[k] = str
+					}
+				}
+				if len(addrMap) > 0 {
+					req.Address = &addrMap
+				}
+			}
+		}
+
+		// Handle social_links
+		if socialLinksRaw, ok := rawReq["social_links"]; ok {
+			if socialLinksMap, ok := socialLinksRaw.(map[string]interface{}); ok {
+				var socialLinks models.SocialLinks
+				if inst, ok := socialLinksMap["instagram"].(string); ok {
+					socialLinks.Instagram = inst
+				}
+				if tg, ok := socialLinksMap["telegram"].(string); ok {
+					socialLinks.Telegram = tg
+				}
+				if fb, ok := socialLinksMap["facebook"].(string); ok {
+					socialLinks.Facebook = fb
+				}
+				if web, ok := socialLinksMap["website"].(string); ok {
+					socialLinks.Website = web
+				}
+				if yt, ok := socialLinksMap["youtube"].(string); ok {
+					socialLinks.YouTube = yt
+				}
+				req.SocialLinks = &socialLinks
+			}
+		}
+
+		// Handle working_hours
+		if workingHoursRaw, ok := rawReq["working_hours"]; ok {
+			if workingHoursMap, ok := workingHoursRaw.(map[string]interface{}); ok {
+				var workingHours models.WorkingHours
+				dayNames := []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
+				for _, dayName := range dayNames {
+					if dayData, ok := workingHoursMap[dayName].(map[string]interface{}); ok {
+						schedule := &models.DaySchedule{}
+						if open, ok := dayData["open"].(string); ok {
+							schedule.Open = open
+						}
+						if close, ok := dayData["close"].(string); ok {
+							schedule.Close = close
+						}
+						if closed, ok := dayData["closed"].(bool); ok {
+							schedule.Closed = closed
+						}
+						switch dayName {
+						case "monday":
+							workingHours.Monday = schedule
+						case "tuesday":
+							workingHours.Tuesday = schedule
+						case "wednesday":
+							workingHours.Wednesday = schedule
+						case "thursday":
+							workingHours.Thursday = schedule
+						case "friday":
+							workingHours.Friday = schedule
+						case "saturday":
+							workingHours.Saturday = schedule
+						case "sunday":
+							workingHours.Sunday = schedule
+						}
+					}
+				}
+				req.WorkingHours = &workingHours
+			}
 		}
 
 		// Dinamik UPDATE query
