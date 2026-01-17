@@ -697,6 +697,9 @@ func GetCustomerOrders(db *sql.DB) http.HandlerFunc {
 
 		dataQuery += ` ORDER BY created_at DESC LIMIT $` + string(rune('0'+argIndex)) + ` OFFSET $` + string(rune('0'+argIndex+1))
 		
+		// Add limit and offset to args
+		args = append(args, limit, offset)
+		
 		// Get total count (without limit/offset)
 		countArgs := args[:len(args)-2] // Remove limit and offset from args
 		var total int
