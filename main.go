@@ -168,6 +168,10 @@ func main() {
 	// --- Admin Orders Management ---
 	http.HandleFunc("/api/admin/orders", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminOrdersHandler(db)))
 	http.HandleFunc("/api/admin/orders/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminOrdersHandler(db)))
+	
+	// --- Admin Regions Management ---
+	http.HandleFunc("/api/admin/regions", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminRegionsHandler(db)))
+	http.HandleFunc("/api/admin/regions/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminRegionItemHandler(db)))
 
 	// --- WebSocket ---
 	http.HandleFunc("/ws/orders", websocket.HandleWebSocket(db))
