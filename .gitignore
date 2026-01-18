@@ -2,3 +2,6 @@ server_app
 *.exe
 *.log
 .DS_Store
+.env
+.env.local
+.env.example
