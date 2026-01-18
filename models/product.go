@@ -105,12 +105,56 @@ func (j *JSONBArray) Scan(value interface{}) error {
 }
 
 // ============================================
-// DELIVERY SETTINGS - Regional delivery pricing
+// DELIVERY SETTINGS - Regional delivery pricing (New Format)
 // ============================================
 
-// RegionSettings - bir hudud uchun yetkazib berish sozlamalari
-// @Description Regional delivery settings
-type RegionSettings struct {
+// HomeDeliverySettings - do'konning o'z viloyati uchun yetkazib berish sozlamalari
+// @Description Home region delivery settings
+type HomeDeliverySettings struct {
+	Price        float64 `json:"price" example:"50000"`
+	IsFree       bool    `json:"is_free" example:"true"`
+	DeliveryDays string  `json:"delivery_days" example:"1 kun"`
+}
+
+// RegionalPriceGroup - bir nechta viloyatlar uchun bitta narx guruhi
+// @Description Regional price group for multiple regions
+type RegionalPriceGroup struct {
+	RegionIDs    []string `json:"ids" example:"1,2,3"`
+	Price        float64  `json:"price" example:"60000"`
+	Name         string   `json:"name,omitempty" example:"Farg'ona vodiysi"`
+	DeliveryDays string   `json:"delivery_days" example:"3-5 kun"`
+}
+
+// DeliverySettings - yetkazib berish sozlamalari (yangi format)
+// @Description Delivery settings with home region and regional groups
+// JSON format:
+// {
+//   "has_installation": true,
+//   "installation_price": 200000,
+//   "home_region_price": 0,
+//   "is_home_region_free": true,
+//   "home_delivery_days": "1 kun",
+//   "regional_prices": [
+//     {"ids": ["1", "2"], "price": 50000, "delivery_days": "3-5 kun"},
+//     {"ids": ["3"], "price": 60000, "delivery_days": "5-7 kun"}
+//   ]
+// }
+type DeliverySettings struct {
+	HasInstallation    bool                 `json:"has_installation" example:"true"`
+	InstallationPrice  float64              `json:"installation_price" example:"200000"`
+	HomeRegionPrice    float64              `json:"home_region_price" example:"0"`
+	IsHomeRegionFree   bool                 `json:"is_home_region_free" example:"true"`
+	HomeDeliveryDays   string               `json:"home_delivery_days" example:"1 kun"`
+	RegionalPrices     []RegionalPriceGroup `json:"regional_prices,omitempty"`
+}
+
+// ============================================
+// LEGACY DELIVERY SETTINGS - For backward compatibility
+// ============================================
+
+// LegacyRegionSettings - eski format uchun (backward compatibility)
+// @Description Legacy regional delivery settings (deprecated)
+type LegacyRegionSettings struct {
 	RegionID          string  `json:"region_id,omitempty" example:"tashkent_city"`
 	RegionName        string  `json:"region_name,omitempty" example:"Toshkent sh."`
 	DeliveryPrice     float64 `json:"delivery_price" example:"50000"`
@@ -120,11 +164,11 @@ type RegionSettings struct {
 	Comment           string  `json:"comment,omitempty" example:"Shahar ichida bepul"`
 }
 
-// DeliverySettings - yetkazib berish sozlamalari (default + overrides)
-// @Description Delivery settings with default and regional overrides
-type DeliverySettings struct {
-	Default   RegionSettings   `json:"default"`
-	Overrides []RegionSettings `json:"overrides,omitempty"`
+// LegacyDeliverySettings - eski format (backward compatibility)
+// @Description Legacy delivery settings (deprecated)
+type LegacyDeliverySettings struct {
+	Default   LegacyRegionSettings   `json:"default"`
+	Overrides []LegacyRegionSettings `json:"overrides,omitempty"`
 }
 
 // Value - database ga yozish uchun
@@ -132,14 +176,13 @@ func (d DeliverySettings) Value() (driver.Value, error) {
 	return json.Marshal(d)
 }
 
-// Scan - database dan o'qish uchun
+// Scan - database dan o'qish uchun (supports both old and new formats)
 func (d *DeliverySettings) Scan(value interface{}) error {
 	if value == nil {
 		*d = DeliverySettings{
-			Default: RegionSettings{
-				DeliveryDays: "3-5",
-			},
-			Overrides: []RegionSettings{},
+			IsHomeRegionFree: true,
+			HomeDeliveryDays: "1-3 kun",
+			RegionalPrices:   []RegionalPriceGroup{},
 		}
 		return nil
 	}
@@ -149,17 +192,101 @@ func (d *DeliverySettings) Scan(value interface{}) error {
 		return errors.New("type assertion to []byte failed for DeliverySettings")
 	}
 
+	// First, try to parse as new format
+	var newFormat DeliverySettings
+	if err := json.Unmarshal(bytes, &newFormat); err == nil {
+		// Check if it's actually new format (has regional_prices or is_home_region_free key)
+		var rawMap map[string]interface{}
+		json.Unmarshal(bytes, &rawMap)
+
+		if _, hasNewKey := rawMap["regional_prices"]; hasNewKey {
+			*d = newFormat
+			return nil
+		}
+		if _, hasNewKey := rawMap["is_home_region_free"]; hasNewKey {
+			*d = newFormat
+			return nil
+		}
+		if _, hasNewKey := rawMap["has_installation"]; hasNewKey {
+			// Could be new format without regional_prices
+			if _, hasDefault := rawMap["default"]; !hasDefault {
+				*d = newFormat
+				return nil
+			}
+		}
+	}
+
+	// Try to parse as old format and convert
+	var oldFormat LegacyDeliverySettings
+	if err := json.Unmarshal(bytes, &oldFormat); err == nil {
+		// Convert old format to new format
+		*d = convertLegacyToNew(oldFormat)
+		return nil
+	}
+
+	// Fallback: just unmarshal directly
 	return json.Unmarshal(bytes, d)
 }
 
-// GetRegionPrice - ma'lum hudud uchun narxni olish
-func (d *DeliverySettings) GetRegionPrice(regionID string) RegionSettings {
-	for _, override := range d.Overrides {
-		if override.RegionID == regionID {
-			return override
+// convertLegacyToNew - eski formatni yangi formatga o'girish
+func convertLegacyToNew(old LegacyDeliverySettings) DeliverySettings {
+	homePrice := old.Default.DeliveryPrice
+	isFree := homePrice <= 0
+
+	// Convert overrides to regional price groups
+	regionalPrices := make([]RegionalPriceGroup, 0, len(old.Overrides))
+	for _, override := range old.Overrides {
+		if override.RegionID != "" && override.DeliveryPrice > 0 {
+			regionalPrices = append(regionalPrices, RegionalPriceGroup{
+				RegionIDs:    []string{override.RegionID},
+				Price:        override.DeliveryPrice,
+				Name:         override.RegionName,
+				DeliveryDays: override.DeliveryDays,
+			})
 		}
 	}
-	return d.Default
+
+	return DeliverySettings{
+		HasInstallation:   old.Default.HasInstallation,
+		InstallationPrice: old.Default.InstallationPrice,
+		HomeRegionPrice:   homePrice,
+		IsHomeRegionFree:  isFree,
+		HomeDeliveryDays:  old.Default.DeliveryDays,
+		RegionalPrices:    regionalPrices,
+	}
+}
+
+// GetRegionPrice - ma'lum hudud uchun narxni olish
+func (d *DeliverySettings) GetRegionPrice(regionID string) (float64, string, bool) {
+	for _, group := range d.RegionalPrices {
+		for _, id := range group.RegionIDs {
+			if id == regionID {
+				return group.Price, group.DeliveryDays, true
+			}
+		}
+	}
+	// Return home region settings as default
+	if d.IsHomeRegionFree {
+		return 0, d.HomeDeliveryDays, true
+	}
+	return d.HomeRegionPrice, d.HomeDeliveryDays, true
+}
+
+// IsRegionAvailable - viloyatga yetkazib berish mavjudmi
+func (d *DeliverySettings) IsRegionAvailable(regionID string, homeRegionID string) bool {
+	// Home region is always available
+	if regionID == homeRegionID {
+		return true
+	}
+	// Check if in any regional group
+	for _, group := range d.RegionalPrices {
+		for _, id := range group.RegionIDs {
+			if id == regionID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ============================================
