@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"mebellar-backend/models"
+	"mebellar-backend/pkg/translator"
 	"net/http"
 	"strings"
 
@@ -783,6 +784,34 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		var shopCount int
 		db.QueryRow(`SELECT COUNT(*) FROM shops WHERE seller_id = $1`, sellerID).Scan(&shopCount)
 		isMain := shopCount == 0
+
+		// Auto-translate shop details using Gemini AI
+		// Seller sends only Uzbek, we translate to Russian and English
+		translatedName, translatedDesc, translatedAddr, err := translator.TranslateShop(
+			nameMap["uz"],
+			descMap["uz"],
+			addrMap["uz"],
+		)
+		if err != nil {
+			log.Printf("⚠️ Shop translation xatosi (fallback to uz only): %v", err)
+			// Fallback: use only Uzbek if translation fails
+			nameMap["ru"] = nameMap["uz"]
+			nameMap["en"] = nameMap["uz"]
+			if descMap["uz"] != "" {
+				descMap["ru"] = descMap["uz"]
+				descMap["en"] = descMap["uz"]
+			}
+			if addrMap["uz"] != "" {
+				addrMap["ru"] = addrMap["uz"]
+				addrMap["en"] = addrMap["uz"]
+			}
+		} else {
+			// Use translated values
+			nameMap = translatedName
+			descMap = translatedDesc
+			addrMap = translatedAddr
+			log.Printf("✅ Shop tarjima muvaffaqiyatli: %s -> ru:%s, en:%s", nameMap["uz"], nameMap["ru"], nameMap["en"])
+		}
 
 		// Prepare JSONB values
 		nameValue, _ := json.Marshal(nameMap)
