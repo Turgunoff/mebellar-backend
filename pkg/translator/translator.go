@@ -11,21 +11,32 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// getOpenAIClient creates a new OpenAI client
-func getOpenAIClient() *openai.Client {
-	apiKey := os.Getenv("OPENAI_API_KEY")
+// DeepSeek API configuration
+const (
+	deepSeekBaseURL = "https://api.deepseek.com"
+	deepSeekModel   = "deepseek-chat" // DeepSeek-V3
+)
+
+// getDeepSeekClient creates a new DeepSeek client using OpenAI-compatible SDK
+func getDeepSeekClient() *openai.Client {
+	apiKey := os.Getenv("OPENAI_API_KEY") // DeepSeek key stored here
 	if apiKey == "" {
-		log.Println("⚠️ OPENAI_API_KEY environment variable is not set")
+		log.Println("⚠️ OPENAI_API_KEY (DeepSeek) environment variable is not set")
 		return nil
 	}
-	return openai.NewClient(apiKey)
+
+	// Configure client to use DeepSeek API endpoint
+	config := openai.DefaultConfig(apiKey)
+	config.BaseURL = deepSeekBaseURL
+
+	return openai.NewClientWithConfig(config)
 }
 
-// generateTranslation calls OpenAI API to generate translation
+// generateTranslation calls DeepSeek API to generate translation
 func generateTranslation(systemPrompt, userPrompt string) (string, error) {
-	client := getOpenAIClient()
+	client := getDeepSeekClient()
 	if client == nil {
-		return "", fmt.Errorf("OPENAI_API_KEY environment variable is not set")
+		return "", fmt.Errorf("OPENAI_API_KEY (DeepSeek) environment variable is not set")
 	}
 
 	ctx := context.Background()
@@ -34,7 +45,7 @@ func generateTranslation(systemPrompt, userPrompt string) (string, error) {
 	resp, err := client.CreateChatCompletion(
 		ctx,
 		openai.ChatCompletionRequest{
-			Model: openai.GPT4oMini, // Cost-effective and fast
+			Model: deepSeekModel, // DeepSeek-V3
 			Messages: []openai.ChatCompletionMessage{
 				{
 					Role:    openai.ChatMessageRoleSystem,
@@ -51,15 +62,15 @@ func generateTranslation(systemPrompt, userPrompt string) (string, error) {
 	)
 
 	if err != nil {
-		return "", fmt.Errorf("OpenAI API error: %w", err)
+		return "", fmt.Errorf("DeepSeek API error: %w", err)
 	}
 
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("no response from OpenAI")
+		return "", fmt.Errorf("no response from DeepSeek")
 	}
 
 	responseText := resp.Choices[0].Message.Content
-	log.Printf("✅ OpenAI response received (model: %s, tokens: %d)", resp.Model, resp.Usage.TotalTokens)
+	log.Printf("✅ DeepSeek response received (model: %s, tokens: %d)", resp.Model, resp.Usage.TotalTokens)
 
 	return responseText, nil
 }
@@ -106,7 +117,7 @@ Product Description (Uzbek): %s`, nameUz, descUz, nameUz, descUz)
 	responseText = cleanJSONResponse(responseText)
 
 	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
-		log.Printf("⚠️ Failed to parse OpenAI JSON response: %v\nResponse: %s", err, responseText)
+		log.Printf("⚠️ Failed to parse DeepSeek JSON response: %v\nResponse: %s", err, responseText)
 		// Fallback: return original Uzbek text for all languages
 		return createFallbackName(nameUz), createFallbackDesc(descUz), nil
 	}
@@ -191,7 +202,7 @@ Shop Address (Uzbek): %s`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 	responseText = cleanJSONResponse(responseText)
 
 	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
-		log.Printf("⚠️ Failed to parse OpenAI JSON response: %v\nResponse: %s", err, responseText)
+		log.Printf("⚠️ Failed to parse DeepSeek JSON response: %v\nResponse: %s", err, responseText)
 		// Fallback: return original Uzbek text for all languages
 		return createFallbackName(nameUz), createFallbackDesc(descUz), createFallbackAddr(addrUz), nil
 	}
@@ -275,7 +286,7 @@ func createFallbackAddr(addrUz string) map[string]string {
 // cleanJSONResponse - Remove markdown code blocks and extra whitespace from JSON response
 func cleanJSONResponse(text string) string {
 	text = strings.TrimSpace(text)
-	
+
 	// Remove ```json at the start
 	if strings.HasPrefix(text, "```json") {
 		text = strings.TrimPrefix(text, "```json")
