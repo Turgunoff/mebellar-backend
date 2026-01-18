@@ -402,6 +402,26 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// Validate that shop exists in database
+		var shopExists bool
+		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM shops WHERE id = $1)", shopID).Scan(&shopExists)
+		if err != nil {
+			log.Printf("❌ Shop tekshirishda xatolik: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Do'konni tekshirishda xatolik",
+			})
+			return
+		}
+		if !shopExists {
+			log.Printf("❌ Shop topilmadi: %s", shopID)
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon topilmadi. Iltimos, avval do'kon yarating.",
+			})
+			return
+		}
+
 		// Parse multipart form (32MB max)
 		err := r.ParseMultipartForm(32 << 20)
 		if err != nil {
