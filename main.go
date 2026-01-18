@@ -111,7 +111,7 @@ func main() {
 
 	// --- Public Endpoints ---
 	http.HandleFunc("/api/categories", handlers.GetCategories(db))
-	http.HandleFunc("/api/categories/", handlers.GetCategoryByID(db))
+	http.HandleFunc("/api/categories/", handlers.CategoryAttributesRouter(db)) // Handles both /categories/{id} and /categories/{id}/attributes
 	http.HandleFunc("/api/regions", handlers.GetRegions(db))
 	http.HandleFunc("/api/products", handlers.GetProducts(db))
 	http.HandleFunc("/api/products/new", handlers.GetNewArrivals(db))
@@ -155,7 +155,8 @@ func main() {
 	http.HandleFunc("/api/admin/users", handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db)))
 	http.HandleFunc("/api/admin/categories/list", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminCategories(db)))
 	http.HandleFunc("/api/admin/categories", handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db)))
-	http.HandleFunc("/api/admin/categories/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryHandler(db)))
+	http.HandleFunc("/api/admin/categories/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryAttributesRouter(db))) // Handles categories/{id}, categories/{id}/attributes
+	http.HandleFunc("/api/admin/category-attributes/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryAttributeHandler(db))) // PUT/DELETE for attributes
 	
 	// --- Admin Sellers Management ---
 	http.HandleFunc("/api/admin/sellers", handlers.RequireRole(db, "admin", "moderator")(handlers.GetSellers(db)))
