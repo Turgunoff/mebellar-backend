@@ -392,19 +392,54 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Get shop ID from header
-		shopID := r.Header.Get("X-Shop-ID")
-		if shopID == "" {
+		// Parse multipart form first (32MB max)
+		err := r.ParseMultipartForm(32 << 20)
+		if err != nil {
+			log.Printf("ParseMultipartForm xatosi: %v", err)
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
-				Message: "X-Shop-ID header kerak",
+				Message: "Form ma'lumotlarini o'qishda xatolik",
 			})
 			return
 		}
 
+		// Get shop ID from header OR form body (multipart forms may send it in body)
+		shopID := r.Header.Get("X-Shop-ID")
+		
+		// Also check form body for shop_id (Flutter sends it in both places for multipart)
+		if shopID == "" {
+			shopID = r.FormValue("shop_id")
+		}
+		
+		// Log what we received for debugging
+		log.Printf("📦 CreateProduct: Header X-Shop-ID = %s, Form shop_id = %s", 
+			r.Header.Get("X-Shop-ID"), r.FormValue("shop_id"))
+		
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header yoki shop_id form field kerak",
+			})
+			return
+		}
+		
+		// Validate UUID format
+		parsedShopID, err := uuid.Parse(shopID)
+		if err != nil {
+			log.Printf("❌ Shop ID UUID format xatosi: %s - %v", shopID, err)
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Shop ID noto'g'ri format (UUID bo'lishi kerak)",
+			})
+			return
+		}
+		shopID = parsedShopID.String() // Use normalized UUID string
+		
+		log.Printf("📦 CreateProduct: Using Shop ID = %s", shopID)
+
 		// Validate that shop exists in database
 		var shopExists bool
-		err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM shops WHERE id = $1)", shopID).Scan(&shopExists)
+		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM shops WHERE id = $1)", shopID).Scan(&shopExists)
 		if err != nil {
 			log.Printf("❌ Shop tekshirishda xatolik: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -418,17 +453,6 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Do'kon topilmadi. Iltimos, avval do'kon yarating.",
-			})
-			return
-		}
-
-		// Parse multipart form (32MB max)
-		err = r.ParseMultipartForm(32 << 20)
-		if err != nil {
-			log.Printf("ParseMultipartForm xatosi: %v", err)
-			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-				Success: false,
-				Message: "Form ma'lumotlarini o'qishda xatolik",
 			})
 			return
 		}
@@ -964,20 +988,51 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Get shop ID from header
-		shopID := r.Header.Get("X-Shop-ID")
-		if shopID == "" {
+		// Parse multipart form first to access form values
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
-				Message: "X-Shop-ID header kerak",
+				Message: "Form ma'lumotlarini o'qishda xatolik: " + err.Error(),
 			})
 			return
 		}
 
+		// Get shop ID from header OR form body (multipart forms may send it in body)
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			shopID = r.FormValue("shop_id")
+		}
+		
+		// Log what we received for debugging
+		log.Printf("📦 UpdateProduct: Header X-Shop-ID = %s, Form shop_id = %s", 
+			r.Header.Get("X-Shop-ID"), r.FormValue("shop_id"))
+		
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header yoki shop_id form field kerak",
+			})
+			return
+		}
+		
+		// Validate UUID format for shop ID
+		parsedShopID, err := uuid.Parse(shopID)
+		if err != nil {
+			log.Printf("❌ Shop ID UUID format xatosi: %s - %v", shopID, err)
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Shop ID noto'g'ri format (UUID bo'lishi kerak)",
+			})
+			return
+		}
+		shopID = parsedShopID.String() // Use normalized UUID string
+		
+		log.Printf("📦 UpdateProduct: Using Shop ID = %s", shopID)
+
 		// Check if product belongs to this shop
 		var existingShopID string
 		var existingImages pq.StringArray
-		err := db.QueryRow(
+		err = db.QueryRow(
 			"SELECT COALESCE(shop_id::text, ''), COALESCE(images, '{}') FROM products WHERE id = $1",
 			productID,
 		).Scan(&existingShopID, &existingImages)
@@ -1003,15 +1058,6 @@ func UpdateProduct(db *sql.DB) http.HandlerFunc {
 			writeJSON(w, http.StatusForbidden, models.AuthResponse{
 				Success: false,
 				Message: "Bu mahsulot sizga tegishli emas",
-			})
-			return
-		}
-
-		// Parse multipart form
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-				Success: false,
-				Message: "Form ma'lumotlarini o'qishda xatolik: " + err.Error(),
 			})
 			return
 		}
