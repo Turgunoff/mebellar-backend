@@ -56,16 +56,28 @@ Product Description (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descUz)
 
-	// Use new SDK API - gemini-1.5-flash-002 is the specific stable version
-	// Available models: gemini-1.5-flash-002 (stable, global), gemini-1.5-pro-002 (quality), gemini-1.0-pro (fallback)
-	result, err := client.Models.GenerateContent(
-		ctx,
-		"gemini-1.5-flash-002", // Specific stable version with global availability
-		genai.Text(prompt),
-		nil, // No additional config
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to generate content: %w", err)
+	// Use new SDK API - try multiple model names as fallback
+	// The new SDK might use different model names than expected
+	modelsToTry := []string{"gemini-1.0-pro", "gemini-pro", "gemini-1.5-pro"}
+	var result *genai.GenerateContentResult
+	var lastErr error
+	
+	for _, modelName := range modelsToTry {
+		result, lastErr = client.Models.GenerateContent(
+			ctx,
+			modelName,
+			genai.Text(prompt),
+			nil,
+		)
+		if lastErr == nil {
+			log.Printf("✅ Successfully used model: %s", modelName)
+			break
+		}
+		log.Printf("⚠️ Model %s failed: %v, trying next...", modelName, lastErr)
+	}
+	
+	if lastErr != nil {
+		return nil, nil, fmt.Errorf("failed to generate content with any model: %w", lastErr)
 	}
 
 	responseText := result.Text()
@@ -151,15 +163,28 @@ Shop Address (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 
-	// Use new SDK API - gemini-1.5-flash-002 is the specific stable version
-	result, err := client.Models.GenerateContent(
-		ctx,
-		"gemini-1.5-flash-002", // Specific stable version with global availability
-		genai.Text(prompt),
-		nil, // No additional config
-	)
-	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to generate content: %w", err)
+	// Use new SDK API - try multiple model names as fallback
+	// The new SDK might use different model names than expected
+	modelsToTry := []string{"gemini-1.0-pro", "gemini-pro", "gemini-1.5-pro"}
+	var result *genai.GenerateContentResult
+	var lastErr error
+	
+	for _, modelName := range modelsToTry {
+		result, lastErr = client.Models.GenerateContent(
+			ctx,
+			modelName,
+			genai.Text(prompt),
+			nil,
+		)
+		if lastErr == nil {
+			log.Printf("✅ Successfully used model: %s", modelName)
+			break
+		}
+		log.Printf("⚠️ Model %s failed: %v, trying next...", modelName, lastErr)
+	}
+	
+	if lastErr != nil {
+		return nil, nil, nil, fmt.Errorf("failed to generate content with any model: %w", lastErr)
 	}
 
 	responseText := result.Text()
