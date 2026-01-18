@@ -87,7 +87,7 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 				COALESCE(s.working_hours::text, '{}')::jsonb,
 				s.is_active, s.is_verified, s.is_main, s.rating,
 				s.created_at, s.updated_at,
-				COALESCE(r.name, '') as region_name
+				COALESCE(r.name::text, '{}')::jsonb as region_name
 			FROM shops s
 			LEFT JOIN regions r ON s.region_id = r.id
 			WHERE 1=1
@@ -165,8 +165,7 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 		shops := []models.Shop{}
 		for rows.Next() {
 			var shop models.Shop
-			var nameJSONB, descJSONB, addrJSONB models.StringMap
-			var regionName string
+			var nameJSONB, descJSONB, addrJSONB, regionNameJSONB models.StringMap
 			err := rows.Scan(
 				&shop.ID, &shop.SellerID,
 				&nameJSONB, &descJSONB, &addrJSONB,
@@ -175,12 +174,13 @@ func ListShops(db *sql.DB) http.HandlerFunc {
 				&shop.WorkingHours,
 				&shop.IsActive, &shop.IsVerified, &shop.IsMain, &shop.Rating,
 				&shop.CreatedAt, &shop.UpdatedAt,
-				&regionName,
+				&regionNameJSONB,
 			)
 			if err == nil {
 				shop.Name = nameJSONB
 				shop.Description = descJSONB
 				shop.Address = addrJSONB
+				shop.RegionName = regionNameJSONB
 			}
 			if err != nil {
 				log.Printf("ListShops: Shop scan xatosi: %v", err)

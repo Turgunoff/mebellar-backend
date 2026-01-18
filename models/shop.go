@@ -29,10 +29,11 @@ type Shop struct {
 	BannerURL string `json:"banner_url,omitempty" example:"https://example.com/banner.jpg"`
 	
 	// Aloqa va joylashuv
-	Phone     string   `json:"phone,omitempty" example:"+998901234567"`
-	Latitude  *float64 `json:"latitude,omitempty" example:"41.311081"`
-	Longitude *float64 `json:"longitude,omitempty" example:"69.240562"`
-	RegionID  *int     `json:"region_id,omitempty" example:"1"`
+	Phone      string    `json:"phone,omitempty" example:"+998901234567"`
+	Latitude   *float64  `json:"latitude,omitempty" example:"41.311081"`
+	Longitude  *float64  `json:"longitude,omitempty" example:"69.240562"`
+	RegionID  *int        `json:"region_id,omitempty" example:"1"`
+	RegionName StringMap  `json:"region_name,omitempty" swaggertype:"object"` // Region name from JOIN (JSONB)
 	
 	// Ish vaqtlari
 	WorkingHours WorkingHours `json:"working_hours,omitempty" swaggertype:"object"`
