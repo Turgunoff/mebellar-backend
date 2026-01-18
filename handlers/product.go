@@ -423,7 +423,7 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Parse multipart form (32MB max)
-		err := r.ParseMultipartForm(32 << 20)
+		err = r.ParseMultipartForm(32 << 20)
 		if err != nil {
 			log.Printf("ParseMultipartForm xatosi: %v", err)
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
