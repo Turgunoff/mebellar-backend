@@ -239,32 +239,21 @@ func GetSellerDetail(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Seller profile ma'lumotlarini olish
+		// Seller profile ma'lumotlarini olish (only valid columns after refactoring)
 		var sellerProfile models.SellerProfile
-		var addressJSONB models.StringMap
 		err := db.QueryRow(`
 			SELECT 
-				id, user_id, shop_name, COALESCE(slug, ''), COALESCE(description, ''),
-				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
+				id, user_id,
 				COALESCE(legal_name, ''), COALESCE(tax_id, ''),
 				COALESCE(bank_account, ''), COALESCE(bank_name, ''),
-				COALESCE(support_phone, ''), 
-				COALESCE(address::text, '{}')::jsonb,
-				latitude, longitude,
-				COALESCE(social_links::text, '{}')::jsonb,
-				COALESCE(working_hours::text, '{}')::jsonb,
-				is_verified, rating, created_at, updated_at
+				is_verified, created_at, updated_at
 			FROM seller_profiles
 			WHERE id = $1
 		`, sellerID).Scan(
-			&sellerProfile.ID, &sellerProfile.UserID, &sellerProfile.ShopName, &sellerProfile.Slug, &sellerProfile.Description,
-			&sellerProfile.LogoURL, &sellerProfile.BannerURL,
+			&sellerProfile.ID, &sellerProfile.UserID,
 			&sellerProfile.LegalName, &sellerProfile.TaxID,
 			&sellerProfile.BankAccount, &sellerProfile.BankName,
-			&sellerProfile.SupportPhone, &addressJSONB,
-			&sellerProfile.Latitude, &sellerProfile.Longitude,
-			&sellerProfile.SocialLinks, &sellerProfile.WorkingHours,
-			&sellerProfile.IsVerified, &sellerProfile.Rating, &sellerProfile.CreatedAt, &sellerProfile.UpdatedAt,
+			&sellerProfile.IsVerified, &sellerProfile.CreatedAt, &sellerProfile.UpdatedAt,
 		)
 
 		if err == sql.ErrNoRows {
@@ -282,7 +271,6 @@ func GetSellerDetail(db *sql.DB) http.HandlerFunc {
 			})
 			return
 		}
-		sellerProfile.Address = addressJSONB
 
 		// User ma'lumotlarini olish
 		var user models.User

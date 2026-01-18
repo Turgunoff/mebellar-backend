@@ -1601,3 +1601,509 @@ func timeAgo(t time.Time) string {
 		return t.Format("02.01.2006")
 	}
 }
+
+// ============================================
+// ADMIN ORDERS (No X-Shop-ID required)
+// ============================================
+
+// GetAdminOrders godoc
+// @Summary      Barcha buyurtmalarni olish (Admin)
+// @Description  Admin panel uchun barcha buyurtmalar ro'yxatini qaytaradi (X-Shop-ID talab qilinmaydi)
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        status query string false "Status filter (new, confirmed, shipping, completed, cancelled)"
+// @Param        shop_id query string false "Do'kon ID bo'yicha filter"
+// @Param        page query int false "Sahifa raqami (default: 1)"
+// @Param        limit query int false "Har sahifadagi buyurtmalar soni (default: 20)"
+// @Success      200  {object}  models.OrdersResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /admin/orders [get]
+func GetAdminOrders(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Role tekshirish
+		userRole := r.Header.Get("X-User-Role")
+		if userRole != "admin" && userRole != "moderator" {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu sahifaga kirish huquqingiz yo'q",
+			})
+			return
+		}
+
+		// Parse query params
+		pageStr := r.URL.Query().Get("page")
+		limitStr := r.URL.Query().Get("limit")
+		statusFilter := r.URL.Query().Get("status")
+		shopIDFilter := r.URL.Query().Get("shop_id")
+
+		page := 1
+		limit := 20
+
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+
+		offset := (page - 1) * limit
+
+		// Build query - no shop_id filter by default (admin sees all)
+		countQuery := `SELECT COUNT(*) FROM orders WHERE 1=1`
+		dataQuery := `
+			SELECT 
+				o.id, o.shop_id, o.client_name, o.client_phone, o.client_address,
+				o.total_amount, o.delivery_price, o.status,
+				o.client_note, o.seller_note,
+				o.created_at, o.updated_at, o.completed_at,
+				COALESCE(s.name->>'uz', s.name->>'ru', s.name->>'en', '') as shop_name
+			FROM orders o
+			LEFT JOIN shops s ON o.shop_id = s.id
+			WHERE 1=1
+		`
+
+		args := []interface{}{}
+		argIndex := 1
+
+		// Filter by shop_id (optional)
+		if shopIDFilter != "" {
+			countQuery += fmt.Sprintf(" AND shop_id = $%d", argIndex)
+			dataQuery += fmt.Sprintf(" AND o.shop_id = $%d", argIndex)
+			args = append(args, shopIDFilter)
+			argIndex++
+		}
+
+		// Filter by status
+		if statusFilter != "" {
+			statuses := strings.Split(statusFilter, ",")
+			if len(statuses) == 1 {
+				countQuery += fmt.Sprintf(" AND status = $%d", argIndex)
+				dataQuery += fmt.Sprintf(" AND o.status = $%d", argIndex)
+				args = append(args, statusFilter)
+				argIndex++
+			} else {
+				placeholders := make([]string, len(statuses))
+				for i, s := range statuses {
+					placeholders[i] = fmt.Sprintf("$%d", argIndex)
+					args = append(args, strings.TrimSpace(s))
+					argIndex++
+				}
+				statusCondition := fmt.Sprintf(" AND status IN (%s)", strings.Join(placeholders, ","))
+				countQuery += statusCondition
+				dataQuery += strings.Replace(statusCondition, "status", "o.status", 1)
+			}
+		}
+
+		dataQuery += " ORDER BY o.created_at DESC"
+		dataQuery += fmt.Sprintf(" LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
+
+		// Get total count
+		var total int
+		countArgs := args[:len(args)]
+		err := db.QueryRow(countQuery, countArgs...).Scan(&total)
+		if err != nil {
+			log.Printf("❌ Admin orders count xatosi: %v", err)
+			total = 0
+		}
+
+		// Get orders
+		args = append(args, limit, offset)
+		rows, err := db.Query(dataQuery, args...)
+		if err != nil {
+			log.Printf("❌ Admin orders query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtmalarni olishda xatolik",
+			})
+			return
+		}
+		defer rows.Close()
+
+		orders := []models.Order{}
+		orderIDs := []string{}
+
+		for rows.Next() {
+			var o models.Order
+			var clientAddress, clientNote, sellerNote sql.NullString
+			var completedAt sql.NullTime
+			var shopName string
+
+			err := rows.Scan(
+				&o.ID, &o.ShopID, &o.ClientName, &o.ClientPhone, &clientAddress,
+				&o.TotalAmount, &o.DeliveryPrice, &o.Status,
+				&clientNote, &sellerNote,
+				&o.CreatedAt, &o.UpdatedAt, &completedAt,
+				&shopName,
+			)
+			if err != nil {
+				log.Printf("Admin order scan xatosi: %v", err)
+				continue
+			}
+
+			if clientAddress.Valid {
+				o.ClientAddress = clientAddress.String
+			}
+			if clientNote.Valid {
+				o.ClientNote = clientNote.String
+			}
+			if sellerNote.Valid {
+				o.SellerNote = sellerNote.String
+			}
+			if completedAt.Valid {
+				o.CompletedAt = &completedAt.Time
+			}
+			o.ShopName = shopName
+
+			orders = append(orders, o)
+			orderIDs = append(orderIDs, o.ID)
+		}
+
+		// Fetch order items for all orders
+		if len(orderIDs) > 0 {
+			itemsMap := make(map[string][]models.OrderItem)
+
+			placeholders := make([]string, len(orderIDs))
+			itemArgs := make([]interface{}, len(orderIDs))
+			for i, id := range orderIDs {
+				placeholders[i] = fmt.Sprintf("$%d", i+1)
+				itemArgs[i] = id
+			}
+
+			itemsQuery := fmt.Sprintf(`
+				SELECT id, order_id, product_id, product_name, product_image, quantity, price
+				FROM order_items 
+				WHERE order_id IN (%s)
+				ORDER BY created_at ASC
+			`, strings.Join(placeholders, ","))
+
+			itemRows, err := db.Query(itemsQuery, itemArgs...)
+			if err != nil {
+				log.Printf("⚠️ Admin order items query xatosi: %v", err)
+			} else {
+				defer itemRows.Close()
+
+				for itemRows.Next() {
+					var item models.OrderItem
+					var productID sql.NullString
+					var productImage sql.NullString
+
+					err := itemRows.Scan(
+						&item.ID, &item.OrderID, &productID, &item.ProductName, &productImage,
+						&item.Quantity, &item.Price,
+					)
+					if err != nil {
+						log.Printf("Admin order item scan xatosi: %v", err)
+						continue
+					}
+
+					if productID.Valid {
+						item.ProductID = &productID.String
+					}
+					if productImage.Valid {
+						item.ProductImage = productImage.String
+					}
+
+					itemsMap[item.OrderID] = append(itemsMap[item.OrderID], item)
+				}
+			}
+
+			// Attach items to orders
+			for i := range orders {
+				if items, ok := itemsMap[orders[i].ID]; ok {
+					orders[i].Items = items
+					orders[i].ItemsCount = len(items)
+				}
+			}
+		}
+
+		log.Printf("✅ Admin: %d ta buyurtma topildi (sahifa %d, status=%s, shop=%s)",
+			len(orders), page, statusFilter, shopIDFilter)
+
+		writeJSON(w, http.StatusOK, models.OrdersResponse{
+			Success: true,
+			Orders:  orders,
+			Total:   total,
+			Page:    page,
+			Limit:   limit,
+		})
+	}
+}
+
+// AdminUpdateOrderStatus godoc
+// @Summary      Buyurtma statusini yangilash (Admin)
+// @Description  Admin tomonidan buyurtma statusini o'zgartirish
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Buyurtma ID"
+// @Param        body body UpdateStatusRequest true "Status va sabab"
+// @Success      200  {object}  models.OrderResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /admin/orders/{id}/status [put]
+func AdminUpdateOrderStatus(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat PUT metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Role tekshirish
+		userRole := r.Header.Get("X-User-Role")
+		if userRole != "admin" && userRole != "moderator" {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu sahifaga kirish huquqingiz yo'q",
+			})
+			return
+		}
+
+		// URL dan order ID olish
+		parts := strings.Split(r.URL.Path, "/")
+		if len(parts) < 4 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtma ID kiritilishi shart",
+			})
+			return
+		}
+		orderID := parts[len(parts)-2] // /admin/orders/{id}/status
+
+		var req UpdateStatusRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		// Validate status
+		validStatuses := map[string]bool{
+			"new": true, "confirmed": true, "shipping": true,
+			"completed": true, "cancelled": true,
+		}
+		if !validStatuses[req.Status] {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri status. Ruxsat etilgan: new, confirmed, shipping, completed, cancelled",
+			})
+			return
+		}
+
+		// Check if order exists
+		var exists bool
+		err := db.QueryRow(`SELECT EXISTS(SELECT 1 FROM orders WHERE id = $1)`, orderID).Scan(&exists)
+		if err != nil || !exists {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtma topilmadi",
+			})
+			return
+		}
+
+		// Update order status
+		updateQuery := `
+			UPDATE orders 
+			SET status = $1, seller_note = COALESCE($2, seller_note), updated_at = NOW()
+		`
+		args := []interface{}{req.Status, req.SellerNote}
+
+		if req.Status == "completed" {
+			updateQuery += ", completed_at = NOW()"
+		}
+
+		updateQuery += " WHERE id = $3"
+		args = append(args, orderID)
+
+		_, err = db.Exec(updateQuery, args...)
+		if err != nil {
+			log.Printf("❌ Admin order status update xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Statusni yangilashda xatolik",
+			})
+			return
+		}
+
+		log.Printf("✅ Admin: Buyurtma %s statusi %s ga o'zgartirildi", orderID, req.Status)
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: fmt.Sprintf("Buyurtma statusi '%s' ga o'zgartirildi", req.Status),
+		})
+	}
+}
+
+// AdminOrdersHandler - /api/admin/orders uchun method router
+func AdminOrdersHandler(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		path := strings.TrimPrefix(r.URL.Path, "/api/admin/orders")
+		path = strings.TrimSuffix(path, "/")
+
+		if strings.HasSuffix(r.URL.Path, "/status") {
+			AdminUpdateOrderStatus(db)(w, r)
+		} else if path == "" || path == "/" {
+			GetAdminOrders(db)(w, r)
+		} else {
+			// Get single order by ID (admin)
+			GetAdminOrderByID(db)(w, r)
+		}
+	}
+}
+
+// GetAdminOrderByID godoc
+// @Summary      Buyurtma ma'lumotlarini olish (Admin)
+// @Description  Admin uchun buyurtma ID bo'yicha to'liq ma'lumotlar
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        id path string true "Buyurtma ID"
+// @Success      200  {object}  models.OrderResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /admin/orders/{id} [get]
+func GetAdminOrderByID(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Role tekshirish
+		userRole := r.Header.Get("X-User-Role")
+		if userRole != "admin" && userRole != "moderator" {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu sahifaga kirish huquqingiz yo'q",
+			})
+			return
+		}
+
+		// URL dan order ID olish
+		path := strings.TrimPrefix(r.URL.Path, "/api/admin/orders/")
+		orderID := strings.TrimSuffix(path, "/")
+
+		if orderID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtma ID kiritilishi shart",
+			})
+			return
+		}
+
+		// Get order
+		var o models.Order
+		var clientAddress, clientNote, sellerNote sql.NullString
+		var completedAt sql.NullTime
+		var shopName string
+
+		err := db.QueryRow(`
+			SELECT 
+				o.id, o.shop_id, o.client_name, o.client_phone, o.client_address,
+				o.total_amount, o.delivery_price, o.status,
+				o.client_note, o.seller_note,
+				o.created_at, o.updated_at, o.completed_at,
+				COALESCE(s.name->>'uz', s.name->>'ru', s.name->>'en', '') as shop_name
+			FROM orders o
+			LEFT JOIN shops s ON o.shop_id = s.id
+			WHERE o.id = $1
+		`, orderID).Scan(
+			&o.ID, &o.ShopID, &o.ClientName, &o.ClientPhone, &clientAddress,
+			&o.TotalAmount, &o.DeliveryPrice, &o.Status,
+			&clientNote, &sellerNote,
+			&o.CreatedAt, &o.UpdatedAt, &completedAt,
+			&shopName,
+		)
+
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtma topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("❌ Admin order query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Buyurtmani olishda xatolik",
+			})
+			return
+		}
+
+		if clientAddress.Valid {
+			o.ClientAddress = clientAddress.String
+		}
+		if clientNote.Valid {
+			o.ClientNote = clientNote.String
+		}
+		if sellerNote.Valid {
+			o.SellerNote = sellerNote.String
+		}
+		if completedAt.Valid {
+			o.CompletedAt = &completedAt.Time
+		}
+		o.ShopName = shopName
+
+		// Get order items
+		itemRows, err := db.Query(`
+			SELECT id, order_id, product_id, product_name, product_image, quantity, price
+			FROM order_items 
+			WHERE order_id = $1
+			ORDER BY created_at ASC
+		`, orderID)
+		if err == nil {
+			defer itemRows.Close()
+			for itemRows.Next() {
+				var item models.OrderItem
+				var productID sql.NullString
+				var productImage sql.NullString
+
+				err := itemRows.Scan(
+					&item.ID, &item.OrderID, &productID, &item.ProductName, &productImage,
+					&item.Quantity, &item.Price,
+				)
+				if err != nil {
+					continue
+				}
+
+				if productID.Valid {
+					item.ProductID = &productID.String
+				}
+				if productImage.Valid {
+					item.ProductImage = productImage.String
+				}
+
+				o.Items = append(o.Items, item)
+			}
+			o.ItemsCount = len(o.Items)
+		}
+
+		writeJSON(w, http.StatusOK, models.OrderResponse{
+			Success: true,
+			Order:   &o,
+		})
+	}
+}

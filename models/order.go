@@ -31,6 +31,7 @@ type OrderItem struct {
 type Order struct {
 	ID            string      `json:"id"`
 	ShopID        string      `json:"shop_id"`
+	ShopName      string      `json:"shop_name,omitempty"` // Admin panel uchun
 	ClientName    string      `json:"client_name"`
 	ClientPhone   string      `json:"client_phone"`
 	ClientAddress string      `json:"client_address,omitempty"`
