@@ -59,7 +59,9 @@ Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descU
 	// Use new SDK API - try multiple model names as fallback
 	// The new SDK might use different model names than expected
 	modelsToTry := []string{"gemini-1.0-pro", "gemini-pro", "gemini-1.5-pro"}
-	var result *genai.GenerateContentResult
+	var result interface {
+		Text() string
+	}
 	var lastErr error
 	
 	for _, modelName := range modelsToTry {
@@ -166,7 +168,9 @@ Return ONLY the JSON object, no additional text.`, nameUz, descUz, addrUz, nameU
 	// Use new SDK API - try multiple model names as fallback
 	// The new SDK might use different model names than expected
 	modelsToTry := []string{"gemini-1.0-pro", "gemini-pro", "gemini-1.5-pro"}
-	var result *genai.GenerateContentResult
+	var result interface {
+		Text() string
+	}
 	var lastErr error
 	
 	for _, modelName := range modelsToTry {
