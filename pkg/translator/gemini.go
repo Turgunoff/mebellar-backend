@@ -56,9 +56,14 @@ Product Description (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descUz)
 
-	// Use new SDK API - try multiple model names as fallback
-	// The new SDK might use different model names than expected
-	modelsToTry := []string{"gemini-1.0-pro", "gemini-pro", "gemini-1.5-pro"}
+	// Use new SDK API - try Flash models first (current standard)
+	// Flash models are faster and more cost-effective for translation tasks
+	modelsToTry := []string{
+		"gemini-1.5-flash",      // Current standard
+		"gemini-1.5-flash-001",  // Specific version (backup)
+		"gemini-1.5-flash-002",  // Newest version (backup)
+		"gemini-1.5-pro",        // High intelligence fallback
+	}
 	var result interface {
 		Text() string
 	}
@@ -165,9 +170,14 @@ Shop Address (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 
-	// Use new SDK API - try multiple model names as fallback
-	// The new SDK might use different model names than expected
-	modelsToTry := []string{"gemini-1.0-pro", "gemini-pro", "gemini-1.5-pro"}
+	// Use new SDK API - try Flash models first (current standard)
+	// Flash models are faster and more cost-effective for translation tasks
+	modelsToTry := []string{
+		"gemini-1.5-flash",      // Current standard
+		"gemini-1.5-flash-001",  // Specific version (backup)
+		"gemini-1.5-flash-002",  // Newest version (backup)
+		"gemini-1.5-pro",        // High intelligence fallback
+	}
 	var result interface {
 		Text() string
 	}
