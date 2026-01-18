@@ -51,7 +51,7 @@ func GetAdminRegions(db *sql.DB) http.HandlerFunc {
 		isActiveStr := r.URL.Query().Get("is_active")
 
 		query := `
-			SELECT id, name, COALESCE(name_jsonb::text, '{}')::jsonb, COALESCE(code, ''), 
+			SELECT id, COALESCE(name::text, '{}')::jsonb, COALESCE(code, ''), 
 				   is_active, ordering, created_at, COALESCE(updated_at, created_at)
 			FROM regions 
 			WHERE 1=1
@@ -69,7 +69,7 @@ func GetAdminRegions(db *sql.DB) http.HandlerFunc {
 			argIndex++
 		}
 
-		query += " ORDER BY ordering ASC, name ASC"
+		query += " ORDER BY ordering ASC"
 
 		rows, err := db.Query(query, args...)
 		if err != nil {
@@ -86,12 +86,24 @@ func GetAdminRegions(db *sql.DB) http.HandlerFunc {
 		for rows.Next() {
 			var r models.Region
 			var nameJSONB models.StringMap
-			err := rows.Scan(&r.ID, &r.Name, &nameJSONB, &r.Code, &r.IsActive, &r.Ordering, &r.CreatedAt, &r.UpdatedAt)
+			err := rows.Scan(&r.ID, &nameJSONB, &r.Code, &r.IsActive, &r.Ordering, &r.CreatedAt, &r.UpdatedAt)
 			if err != nil {
 				log.Printf("Region scan xatosi: %v", err)
 				continue
 			}
 			r.NameJSONB = nameJSONB
+			// Extract legacy name from JSONB (prefer uz, then first available)
+			if nameJSONB != nil {
+				if uzName, ok := nameJSONB["uz"]; ok && uzName != "" {
+					r.Name = uzName
+				} else {
+					// Get first available name
+					for _, name := range nameJSONB {
+						r.Name = name
+						break
+					}
+				}
+			}
 			regions = append(regions, r)
 		}
 
@@ -183,20 +195,19 @@ func CreateRegion(db *sql.DB) http.HandlerFunc {
 
 		// JSONB maydonlarni tayyorlash
 		nameValue, _ := json.Marshal(req.Name)
-		legacyName := req.Name["uz"] // Legacy name uchun
 
-		// Insert
+		// Insert (name column is JSONB type)
 		var region models.Region
 		var nameJSONB models.StringMap
 		query := `
-			INSERT INTO regions (name, name_jsonb, code, is_active, ordering, created_at, updated_at)
-			VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
-			RETURNING id, name, COALESCE(name_jsonb::text, '{}')::jsonb, COALESCE(code, ''), 
+			INSERT INTO regions (name, code, is_active, ordering, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, NOW(), NOW())
+			RETURNING id, COALESCE(name::text, '{}')::jsonb, COALESCE(code, ''), 
 					  is_active, ordering, created_at, updated_at
 		`
 
-		err = db.QueryRow(query, legacyName, nameValue, req.Code, isActive, req.Ordering).Scan(
-			&region.ID, &region.Name, &nameJSONB, &region.Code,
+		err = db.QueryRow(query, nameValue, req.Code, isActive, req.Ordering).Scan(
+			&region.ID, &nameJSONB, &region.Code,
 			&region.IsActive, &region.Ordering, &region.CreatedAt, &region.UpdatedAt,
 		)
 		if err != nil {
@@ -208,6 +219,17 @@ func CreateRegion(db *sql.DB) http.HandlerFunc {
 			return
 		}
 		region.NameJSONB = nameJSONB
+		// Extract legacy name from JSONB
+		if nameJSONB != nil {
+			if uzName, ok := nameJSONB["uz"]; ok && uzName != "" {
+				region.Name = uzName
+			} else {
+				for _, name := range nameJSONB {
+					region.Name = name
+					break
+				}
+			}
+		}
 
 		log.Printf("✅ Yangi hudud yaratildi: %s (ID: %d, Code: %s)", region.Name, region.ID, region.Code)
 
@@ -296,16 +318,10 @@ func UpdateRegion(db *sql.DB) http.HandlerFunc {
 
 		if req.Name != nil {
 			nameValue, _ := json.Marshal(*req.Name)
-			updates = append(updates, fmt.Sprintf("name_jsonb = $%d", argIndex))
+			// name column is JSONB type, so update it directly
+			updates = append(updates, fmt.Sprintf("name = $%d", argIndex))
 			args = append(args, nameValue)
 			argIndex++
-
-			// Legacy name ni ham yangilash
-			if uzName, ok := (*req.Name)["uz"]; ok && uzName != "" {
-				updates = append(updates, fmt.Sprintf("name = $%d", argIndex))
-				args = append(args, uzName)
-				argIndex++
-			}
 		}
 		if req.Code != nil {
 			// Code unikal ekanligini tekshirish
