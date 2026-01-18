@@ -704,9 +704,12 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			RETURNING id
 		`
 
-		var categoryIDPtr *string
+		// Handle category_id - use nil for empty, otherwise the string value
+		var categoryIDValue interface{}
 		if categoryID != "" {
-			categoryIDPtr = &categoryID
+			categoryIDValue = categoryID // Pass string directly, not pointer
+		} else {
+			categoryIDValue = nil
 		}
 
 		specsValue, _ := specs.Value()
@@ -715,27 +718,28 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		nameValue, _ := nameMap.Value()
 		descValue, _ := descMap.Value()
 
-		// CRITICAL DEBUG: Log exact values being inserted
-		log.Printf("🔍 DEBUG INSERT: product_id=%s, shop_id=%s, category_id=%v", productID, shopID, categoryIDPtr)
-		log.Printf("🔍 DEBUG INSERT: price=%.2f, images=%d, is_new=%v", price, len(imageURLs), isNew)
+		// CRITICAL DEBUG: Log exact values being inserted (with actual values, not pointers)
+		log.Printf("🔍 DEBUG INSERT: product_id='%s', shop_id='%s', category_id='%v'", productID, shopID, categoryIDValue)
+		log.Printf("🔍 DEBUG INSERT: price=%.2f, images=%d, is_new=%v, is_popular=%v", price, len(imageURLs), isNew, isPopular)
+		log.Printf("🔍 DEBUG INSERT: All values - $1=%s, $2=%s, $3=%v", productID, shopID, categoryIDValue)
 		
 		var insertedID string
 		err = db.QueryRow(
 			query,
-			productID,
-			shopID,
-			categoryIDPtr,
-			nameValue,
-			descValue,
-			price,
-			discountPrice,
-			fmt.Sprintf("{%s}", strings.Join(quoteStrings(imageURLs), ",")),
-			specsValue,
-			variantsValue,
-			deliveryValue,
-			isNew,
-			isPopular,
-			time.Now(),
+			productID,        // $1 - string
+			shopID,           // $2 - string (this is the critical one!)
+			categoryIDValue,  // $3 - string or nil
+			nameValue,        // $4 - JSONB
+			descValue,        // $5 - JSONB
+			price,            // $6 - float64
+			discountPrice,    // $7 - *float64
+			fmt.Sprintf("{%s}", strings.Join(quoteStrings(imageURLs), ",")), // $8 - text[]
+			specsValue,       // $9 - JSONB
+			variantsValue,    // $10 - JSONB
+			deliveryValue,    // $11 - JSONB
+			isNew,            // $12 - bool
+			isPopular,        // $13 - bool
+			time.Now(),       // $14 - timestamp
 		).Scan(&insertedID)
 
 		if err != nil {
@@ -747,9 +751,14 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		log.Printf("✅ Mahsulot yaratildi: %s - %s", insertedID, name)
+		log.Printf("✅ Mahsulot yaratildi: %s - %s (shop_id: %s)", insertedID, name, shopID)
 
 		// Return created product
+		var categoryIDPtr *string
+		if categoryID != "" {
+			categoryIDPtr = &categoryID
+		}
+		
 		product := models.Product{
 			ID:               insertedID,
 			CategoryID:       categoryIDPtr,
