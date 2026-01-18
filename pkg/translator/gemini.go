@@ -56,11 +56,11 @@ Product Description (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descUz)
 
-	// Use new SDK API - gemini-1.5-flash is stable and available globally
-	// Available models: gemini-1.5-flash (stable, global), gemini-1.5-pro (quality), gemini-2.0-flash (region-locked)
+	// Use new SDK API - gemini-1.5-flash-002 is the specific stable version
+	// Available models: gemini-1.5-flash-002 (stable, global), gemini-1.5-pro-002 (quality), gemini-1.0-pro (fallback)
 	result, err := client.Models.GenerateContent(
 		ctx,
-		"gemini-1.5-flash", // Stable production model with global availability
+		"gemini-1.5-flash-002", // Specific stable version with global availability
 		genai.Text(prompt),
 		nil, // No additional config
 	)
@@ -151,10 +151,10 @@ Shop Address (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 
-	// Use new SDK API - gemini-1.5-flash is stable and available globally
+	// Use new SDK API - gemini-1.5-flash-002 is the specific stable version
 	result, err := client.Models.GenerateContent(
 		ctx,
-		"gemini-1.5-flash", // Stable production model with global availability
+		"gemini-1.5-flash-002", // Specific stable version with global availability
 		genai.Text(prompt),
 		nil, // No additional config
 	)
