@@ -106,13 +106,33 @@ func GetSellerProfile(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// 2. Do'kon ma'lumotlarini olish
+		// 2. Get seller_id from seller_profiles
+		var sellerID string
+		err = db.QueryRow(`SELECT id FROM seller_profiles WHERE user_id = $1`, userID).Scan(&sellerID)
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Sotuvchi profili topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("GetSellerProfile seller query error: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Sotuvchi ma'lumotlarini olishda xatolik",
+			})
+			return
+		}
+
+		// 3. Do'kon ma'lumotlarini shops jadvalidan olish
 		var shopData ShopStatsData
+		var shopName models.StringMap
 		err = db.QueryRow(`
-			SELECT id, shop_name, COALESCE(logo_url, ''), rating, is_verified
-			FROM seller_profiles 
-			WHERE id = $1 AND user_id = $2
-		`, shopID, userID).Scan(&shopData.ID, &shopData.Name, &shopData.LogoURL, &shopData.Rating, &shopData.IsVerified)
+			SELECT id, name, COALESCE(logo_url, ''), rating, is_verified
+			FROM shops 
+			WHERE id = $1 AND seller_id = $2
+		`, shopID, sellerID).Scan(&shopData.ID, &shopName, &shopData.LogoURL, &shopData.Rating, &shopData.IsVerified)
 
 		if err == sql.ErrNoRows {
 			writeJSON(w, http.StatusNotFound, models.AuthResponse{
@@ -128,6 +148,14 @@ func GetSellerProfile(db *sql.DB) http.HandlerFunc {
 				Message: "Do'kon ma'lumotlarini olishda xatolik",
 			})
 			return
+		}
+		// Extract shop name from JSONB (prefer "uz" key)
+		if name, ok := shopName["uz"]; ok {
+			shopData.Name = name
+		} else if name, ok := shopName["ru"]; ok {
+			shopData.Name = name
+		} else if name, ok := shopName["en"]; ok {
+			shopData.Name = name
 		}
 
 		// 3. Aktiv mahsulotlar sonini olish

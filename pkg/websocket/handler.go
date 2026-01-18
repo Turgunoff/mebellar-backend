@@ -79,11 +79,20 @@ func HandleWebSocket(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// 5. Verify user owns this shop
-		var count int
-		err = db.QueryRow("SELECT COUNT(*) FROM seller_profiles WHERE id = $1 AND user_id = $2", shopID, userID).Scan(&count)
-		if err != nil || count == 0 {
-			log.Printf("❌ WebSocket: User %s doesn't own shop %s", userID, shopID)
+		// 5. Verify user owns this shop (user_id -> seller_profiles.id -> shops.seller_id)
+		var sellerID string
+		err = db.QueryRow("SELECT id FROM seller_profiles WHERE user_id = $1", userID).Scan(&sellerID)
+		if err != nil {
+			log.Printf("❌ WebSocket: User %s has no seller profile: %v", userID, err)
+			http.Error(w, "Forbidden: No seller profile", http.StatusForbidden)
+			return
+		}
+
+		// Check if the shop belongs to this seller
+		var shopCount int
+		err = db.QueryRow("SELECT COUNT(*) FROM shops WHERE id = $1 AND seller_id = $2", shopID, sellerID).Scan(&shopCount)
+		if err != nil || shopCount == 0 {
+			log.Printf("❌ WebSocket: User %s (seller %s) doesn't own shop %s", userID, sellerID, shopID)
 			http.Error(w, "Forbidden: Not your shop", http.StatusForbidden)
 			return
 		}
