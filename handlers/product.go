@@ -570,38 +570,38 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			if err := json.Unmarshal([]byte(deliverySettingsJSON), &deliverySettings); err != nil {
 				log.Printf("DeliverySettings JSON parse xatosi: %v", err)
 				deliverySettings = models.DeliverySettings{
-					Default: models.RegionSettings{DeliveryDays: "3-5"},
+					IsHomeRegionFree: true,
+					HomeDeliveryDays: "1-3 kun",
+					RegionalPrices:   []models.RegionalPriceGroup{},
 				}
 			} else {
 				// Validate delivery settings prices (DECIMAL(15,2) max: 9999999999999.99)
 				const maxDeliveryPrice = 9999999999999.99
-				if deliverySettings.Default.DeliveryPrice > maxDeliveryPrice {
+				
+				// Validate home region price
+				if deliverySettings.HomeRegionPrice > maxDeliveryPrice {
 					writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 						Success: false,
-						Message: fmt.Sprintf("Yetkazib berish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
+						Message: fmt.Sprintf("O'z viloyati uchun yetkazib berish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
 					})
 					return
 				}
-				if deliverySettings.Default.InstallationPrice > maxDeliveryPrice {
+				
+				// Validate installation price
+				if deliverySettings.InstallationPrice > maxDeliveryPrice {
 					writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 						Success: false,
 						Message: fmt.Sprintf("O'rnatish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
 					})
 					return
 				}
-				// Validate overrides
-				for _, override := range deliverySettings.Overrides {
-					if override.DeliveryPrice > maxDeliveryPrice {
+				
+				// Validate regional price groups
+				for _, group := range deliverySettings.RegionalPrices {
+					if group.Price > maxDeliveryPrice {
 						writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 							Success: false,
-							Message: fmt.Sprintf("Hudud uchun yetkazib berish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
-						})
-						return
-					}
-					if override.InstallationPrice > maxDeliveryPrice {
-						writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-							Success: false,
-							Message: fmt.Sprintf("Hudud uchun o'rnatish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
+							Message: fmt.Sprintf("Viloyat guruhi uchun yetkazib berish narxi juda katta. Maksimal: %.2f", maxDeliveryPrice),
 						})
 						return
 					}
