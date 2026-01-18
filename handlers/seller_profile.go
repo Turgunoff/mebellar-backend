@@ -828,18 +828,19 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		// ==========================================
 		// 4. WORKING HOURS (OPTIONAL)
 		// ==========================================
-		var simpleHoursValue []byte
+		// Store as JSONB in working_hours column: {"uz": "09:00 - 18:00", ...}
+		var workingHoursValue []byte
 		if workingHoursStr != "" {
 			// Simple format: "09:00 - 18:00" -> {"uz": "09:00 - 18:00", "ru": "09:00 - 18:00", "en": "09:00 - 18:00"}
-			simpleHoursMap := models.StringMap{
+			workingHoursMap := models.StringMap{
 				"uz": workingHoursStr,
 				"ru": workingHoursStr,
 				"en": workingHoursStr,
 			}
-			simpleHoursValue, _ = json.Marshal(simpleHoursMap)
+			workingHoursValue, _ = json.Marshal(workingHoursMap)
 		} else {
-			// NULL if not provided
-			simpleHoursValue = nil
+			// Empty JSONB if not provided
+			workingHoursValue = []byte("{}")
 		}
 
 		// ==========================================
@@ -895,7 +896,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		query := `
 			INSERT INTO shops (
 				seller_id, name, description, address, slug,
-				phone, region_id, logo_url, simple_hours,
+				phone, region_id, logo_url, working_hours,
 				is_active, is_verified, is_main, rating
 			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			RETURNING 
@@ -916,7 +917,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		err = db.QueryRow(
 			query,
 			sellerID, nameValue, descValue, addrValue, slug,
-			phoneStr, regionID, logoURLVal, simpleHoursValue,
+			phoneStr, regionID, logoURLVal, workingHoursValue,
 			true, false, isMain, 0.0, // is_active=true, is_verified=false, rating=0
 		).Scan(
 			&shop.ID, &shop.SellerID, &nameJSONB, &descJSONB, &addrJSONB, &shop.Slug,

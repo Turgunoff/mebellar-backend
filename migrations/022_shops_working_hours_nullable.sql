@@ -4,7 +4,6 @@
 -- Description: 
 --   1. Ensure address is JSONB (already is, but safety check)
 --   2. Make working_hours nullable (optional field)
---   3. Add simple_hours column for "HH:MM - HH:MM" format
 -- ============================================
 
 -- ============================================
@@ -43,34 +42,16 @@ BEGIN
     END IF;
 END $$;
 
--- 2. Ensure working_hours allows NULL (for optional working hours)
-ALTER TABLE shops ALTER COLUMN working_hours DROP DEFAULT;
-ALTER TABLE shops ALTER COLUMN working_hours DROP NOT NULL;
-ALTER TABLE shops ALTER COLUMN working_hours SET DEFAULT NULL;
+-- 2. Ensure working_hours allows empty JSONB (for optional working hours)
+-- Note: We store simple format like {"uz": "09:00 - 18:00", "ru": "09:00 - 18:00", "en": "09:00 - 18:00"}
+-- in the existing working_hours column
 
--- 3. Add simple_hours column for simplified "HH:MM - HH:MM" format
--- This stores the working hours as simple text that can also be translated
-DO $$
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = 'shops' 
-        AND column_name = 'simple_hours'
-    ) THEN
-        ALTER TABLE shops ADD COLUMN simple_hours JSONB DEFAULT NULL;
-        COMMENT ON COLUMN shops.simple_hours IS 'Simplified working hours: {"uz": "09:00 - 18:00", "ru": "09:00 - 18:00", "en": "09:00 - 18:00"}';
-        RAISE NOTICE 'Added simple_hours column to shops';
-    END IF;
-END $$;
-
--- 4. Update any NULL address to empty JSONB
+-- 3. Update any NULL address to empty JSONB
 UPDATE shops SET address = '{}' WHERE address IS NULL;
 
 -- ============================================
 -- DOWN MIGRATION (Rollback)
 -- ============================================
 /*
--- To rollback:
-ALTER TABLE shops DROP COLUMN IF EXISTS simple_hours;
-ALTER TABLE shops ALTER COLUMN working_hours SET DEFAULT '{}';
+-- No changes needed for rollback since we're using existing columns
 */

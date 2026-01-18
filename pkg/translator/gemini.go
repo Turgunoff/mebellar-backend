@@ -7,25 +7,34 @@ import (
 	"log"
 	"os"
 
-	"github.com/google/generative-ai-go/genai"
-	"google.golang.org/api/option"
+	"google.golang.org/genai"
 )
+
+// getGeminiClient creates a new Gemini client using the new SDK
+func getGeminiClient(ctx context.Context) (*genai.Client, error) {
+	apiKey := os.Getenv("GEMINI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("GEMINI_API_KEY environment variable is not set")
+	}
+
+	client, err := genai.NewClient(ctx, &genai.ClientConfig{
+		APIKey: apiKey,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Gemini client: %w", err)
+	}
+
+	return client, nil
+}
 
 // TranslateProduct - Translate product name and description from Uzbek to Russian and English
 // Returns maps with keys: "uz", "ru", "en"
 func TranslateProduct(nameUz, descUz string) (nameMap, descMap map[string]string, err error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, nil, fmt.Errorf("GEMINI_API_KEY environment variable is not set")
-	}
-
-	// Initialize Gemini client
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	client, err := getGeminiClient(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create Gemini client: %w", err)
+		return nil, nil, err
 	}
-	defer client.Close()
 
 	// Prepare prompt
 	prompt := fmt.Sprintf(`You are a furniture expert. Translate this product Name and Description from Uzbek to Russian and English. Return ONLY a JSON object in this format:
@@ -47,31 +56,25 @@ Product Description (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descUz)
 
-	// Get the model
-	model := client.GenerativeModel("gemini-pro")
-	
-	// Generate content
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	// Use new SDK API - gemini-2.0-flash is recommended (or gemini-3-flash-preview for latest)
+	// Available models: gemini-2.0-flash, gemini-3-flash-preview, gemini-1.5-flash, gemini-1.5-pro
+	result, err := client.Models.GenerateContent(
+		ctx,
+		"gemini-2.0-flash", // Fast and reliable, supports latest features
+		genai.Text(prompt),
+		nil, // No additional config
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to generate content: %w", err)
 	}
 
-	// Extract text from response
-	var responseText string
-	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-		for _, part := range resp.Candidates[0].Content.Parts {
-			if textPart, ok := part.(genai.Text); ok {
-				responseText += string(textPart)
-			}
-		}
-	}
-
+	responseText := result.Text()
 	if responseText == "" {
 		return nil, nil, fmt.Errorf("empty response from Gemini")
 	}
 
 	// Parse JSON response
-	var result struct {
+	var parsed struct {
 		Name        map[string]string `json:"name"`
 		Description map[string]string `json:"description"`
 	}
@@ -79,66 +82,48 @@ Return ONLY the JSON object, no additional text.`, nameUz, descUz, nameUz, descU
 	// Clean response text (remove markdown code blocks if present)
 	responseText = cleanJSONResponse(responseText)
 
-	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+	if err := json.Unmarshal([]byte(responseText), &parsed); err != nil {
 		log.Printf("⚠️ Failed to parse Gemini JSON response: %v\nResponse: %s", err, responseText)
 		return nil, nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	// Ensure all required keys exist
-	if result.Name == nil {
-		result.Name = make(map[string]string)
+	if parsed.Name == nil {
+		parsed.Name = make(map[string]string)
 	}
-	if result.Description == nil {
-		result.Description = make(map[string]string)
+	if parsed.Description == nil {
+		parsed.Description = make(map[string]string)
 	}
 
 	// Set Uzbek values (preserve original)
-	result.Name["uz"] = nameUz
-	result.Description["uz"] = descUz
+	parsed.Name["uz"] = nameUz
+	parsed.Description["uz"] = descUz
 
 	// Ensure ru and en exist (fallback to uz if missing)
-	if result.Name["ru"] == "" {
-		result.Name["ru"] = nameUz
+	if parsed.Name["ru"] == "" {
+		parsed.Name["ru"] = nameUz
 	}
-	if result.Name["en"] == "" {
-		result.Name["en"] = nameUz
+	if parsed.Name["en"] == "" {
+		parsed.Name["en"] = nameUz
 	}
-	if result.Description["ru"] == "" {
-		result.Description["ru"] = descUz
+	if parsed.Description["ru"] == "" {
+		parsed.Description["ru"] = descUz
 	}
-	if result.Description["en"] == "" {
-		result.Description["en"] = descUz
+	if parsed.Description["en"] == "" {
+		parsed.Description["en"] = descUz
 	}
 
-	return result.Name, result.Description, nil
-}
-
-// cleanJSONResponse - Remove markdown code blocks and extra whitespace from JSON response
-func cleanJSONResponse(text string) string {
-	// Remove markdown code blocks (```json ... ``` or ``` ... ```)
-	text = removeMarkdownCodeBlocks(text)
-	
-	// Trim whitespace
-	text = trimWhitespace(text)
-	
-	return text
+	return parsed.Name, parsed.Description, nil
 }
 
 // TranslateShop - Translate shop name, description, and address from Uzbek to Russian and English
 // Returns maps with keys: "uz", "ru", "en"
 func TranslateShop(nameUz, descUz, addrUz string) (nameMap, descMap, addrMap map[string]string, err error) {
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		return nil, nil, nil, fmt.Errorf("GEMINI_API_KEY environment variable is not set")
-	}
-
-	// Initialize Gemini client
 	ctx := context.Background()
-	client, err := genai.NewClient(ctx, option.WithAPIKey(apiKey))
+	client, err := getGeminiClient(ctx)
 	if err != nil {
-		return nil, nil, nil, fmt.Errorf("failed to create Gemini client: %w", err)
+		return nil, nil, nil, err
 	}
-	defer client.Close()
 
 	// Prepare prompt
 	prompt := fmt.Sprintf(`You are a furniture shop expert. Translate this shop Name, Description, and Address from Uzbek to Russian and English. Return ONLY a JSON object in this format:
@@ -166,31 +151,24 @@ Shop Address (Uzbek): %s
 
 Return ONLY the JSON object, no additional text.`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 
-	// Get the model
-	model := client.GenerativeModel("gemini-pro")
-	
-	// Generate content
-	resp, err := model.GenerateContent(ctx, genai.Text(prompt))
+	// Use new SDK API - gemini-2.0-flash is recommended
+	result, err := client.Models.GenerateContent(
+		ctx,
+		"gemini-3-flash-preview", // Fast and reliable
+		genai.Text(prompt),
+		nil, // No additional config
+	)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to generate content: %w", err)
 	}
 
-	// Extract text from response
-	var responseText string
-	if len(resp.Candidates) > 0 && len(resp.Candidates[0].Content.Parts) > 0 {
-		for _, part := range resp.Candidates[0].Content.Parts {
-			if textPart, ok := part.(genai.Text); ok {
-				responseText += string(textPart)
-			}
-		}
-	}
-
+	responseText := result.Text()
 	if responseText == "" {
 		return nil, nil, nil, fmt.Errorf("empty response from Gemini")
 	}
 
 	// Parse JSON response
-	var result struct {
+	var parsed struct {
 		Name        map[string]string `json:"name"`
 		Description map[string]string `json:"description"`
 		Address     map[string]string `json:"address"`
@@ -199,52 +177,63 @@ Return ONLY the JSON object, no additional text.`, nameUz, descUz, addrUz, nameU
 	// Clean response text (remove markdown code blocks if present)
 	responseText = cleanJSONResponse(responseText)
 
-	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
+	if err := json.Unmarshal([]byte(responseText), &parsed); err != nil {
 		log.Printf("⚠️ Failed to parse Gemini JSON response: %v\nResponse: %s", err, responseText)
 		return nil, nil, nil, fmt.Errorf("failed to parse JSON response: %w", err)
 	}
 
 	// Ensure all required keys exist
-	if result.Name == nil {
-		result.Name = make(map[string]string)
+	if parsed.Name == nil {
+		parsed.Name = make(map[string]string)
 	}
-	if result.Description == nil {
-		result.Description = make(map[string]string)
+	if parsed.Description == nil {
+		parsed.Description = make(map[string]string)
 	}
-	if result.Address == nil {
-		result.Address = make(map[string]string)
+	if parsed.Address == nil {
+		parsed.Address = make(map[string]string)
 	}
 
 	// Set Uzbek values (preserve original)
-	result.Name["uz"] = nameUz
+	parsed.Name["uz"] = nameUz
 	if descUz != "" {
-		result.Description["uz"] = descUz
+		parsed.Description["uz"] = descUz
 	}
 	if addrUz != "" {
-		result.Address["uz"] = addrUz
+		parsed.Address["uz"] = addrUz
 	}
 
 	// Ensure ru and en exist (fallback to uz if missing)
-	if result.Name["ru"] == "" {
-		result.Name["ru"] = nameUz
+	if parsed.Name["ru"] == "" {
+		parsed.Name["ru"] = nameUz
 	}
-	if result.Name["en"] == "" {
-		result.Name["en"] = nameUz
+	if parsed.Name["en"] == "" {
+		parsed.Name["en"] = nameUz
 	}
-	if result.Description["ru"] == "" && descUz != "" {
-		result.Description["ru"] = descUz
+	if parsed.Description["ru"] == "" && descUz != "" {
+		parsed.Description["ru"] = descUz
 	}
-	if result.Description["en"] == "" && descUz != "" {
-		result.Description["en"] = descUz
+	if parsed.Description["en"] == "" && descUz != "" {
+		parsed.Description["en"] = descUz
 	}
-	if result.Address["ru"] == "" && addrUz != "" {
-		result.Address["ru"] = addrUz
+	if parsed.Address["ru"] == "" && addrUz != "" {
+		parsed.Address["ru"] = addrUz
 	}
-	if result.Address["en"] == "" && addrUz != "" {
-		result.Address["en"] = addrUz
+	if parsed.Address["en"] == "" && addrUz != "" {
+		parsed.Address["en"] = addrUz
 	}
 
-	return result.Name, result.Description, result.Address, nil
+	return parsed.Name, parsed.Description, parsed.Address, nil
+}
+
+// cleanJSONResponse - Remove markdown code blocks and extra whitespace from JSON response
+func cleanJSONResponse(text string) string {
+	// Remove markdown code blocks (```json ... ``` or ``` ... ```)
+	text = removeMarkdownCodeBlocks(text)
+
+	// Trim whitespace
+	text = trimWhitespace(text)
+
+	return text
 }
 
 // removeMarkdownCodeBlocks - Remove markdown code block markers
@@ -255,12 +244,12 @@ func removeMarkdownCodeBlocks(text string) string {
 	} else if len(text) >= 3 && text[:3] == "```" {
 		text = text[3:]
 	}
-	
+
 	// Remove ``` at the end
 	if len(text) >= 3 && text[len(text)-3:] == "```" {
 		text = text[:len(text)-3]
 	}
-	
+
 	return text
 }
 
@@ -270,11 +259,11 @@ func trimWhitespace(text string) string {
 	for len(text) > 0 && (text[0] == ' ' || text[0] == '\n' || text[0] == '\r' || text[0] == '\t') {
 		text = text[1:]
 	}
-	
+
 	// Remove trailing whitespace
 	for len(text) > 0 && (text[len(text)-1] == ' ' || text[len(text)-1] == '\n' || text[len(text)-1] == '\r' || text[len(text)-1] == '\t') {
 		text = text[:len(text)-1]
 	}
-	
+
 	return text
 }
