@@ -3,12 +3,19 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"io"
 	"log"
 	"mebellar-backend/models"
 	"mebellar-backend/pkg/translator"
 	"net/http"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -576,14 +583,20 @@ func GetMyShops(db *sql.DB) http.HandlerFunc {
 }
 
 // CreateShop godoc
-// @Summary      Yangi do'kon yaratish
-// @Description  Sotuvchi uchun yangi do'kon yaratadi (bir foydalanuvchi ko'p do'kon ochishi mumkin)
+// @Summary      Yangi do'kon yaratish (Pro)
+// @Description  Sotuvchi uchun yangi do'kon yaratadi. Logo file, region_id, va ixtiyoriy ish vaqtlarini qo'llab-quvvatlaydi.
 // @Tags         seller
-// @Accept       json
+// @Accept       multipart/form-data
 // @Produce      json
 // @Security     BearerAuth
-// @Param        request body models.CreateSellerProfileRequest true "Do'kon ma'lumotlari"
-// @Success      201  {object}  models.SellerProfileResponse
+// @Param        name formData string true "Do'kon nomi (Uzbek)"
+// @Param        description formData string false "Do'kon tavsifi (Uzbek)"
+// @Param        phone formData string false "Aloqa telefon raqami"
+// @Param        address formData string false "Aniq manzil (Uzbek)"
+// @Param        region_id formData int false "Region ID"
+// @Param        working_hours formData string false "Ish vaqti (masalan: 09:00 - 18:00)"
+// @Param        logo formData file false "Do'kon logosi"
+// @Success      201  {object}  models.ShopResponse
 // @Failure      400  {object}  models.AuthResponse
 // @Failure      401  {object}  models.AuthResponse
 // @Failure      500  {object}  models.AuthResponse
@@ -607,117 +620,100 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Parse request body manually to handle address as both string and JSONB
-		var rawReq map[string]interface{}
-		if err := json.NewDecoder(r.Body).Decode(&rawReq); err != nil {
-			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-				Success: false,
-				Message: "Noto'g'ri so'rov formati",
-			})
-			return
-		}
+		// Detect content type - support both JSON and multipart
+		contentType := r.Header.Get("Content-Type")
+		isMultipart := strings.Contains(contentType, "multipart/form-data")
 
-		// Parse request - accept both old format (shop_name, support_phone) and new format (name, phone)
-		var nameStr string
-		if nameRaw, ok := rawReq["name"].(string); ok {
-			nameStr = nameRaw
-		} else if shopNameRaw, ok := rawReq["shop_name"].(string); ok {
-			// Backward compatibility
-			nameStr = shopNameRaw
+		var nameStr, descStr, phoneStr, addressStr, workingHoursStr string
+		var regionID *int
+		var logoFile io.Reader
+		var logoFileName string
+
+		if isMultipart {
+			// Parse multipart form (10MB max for logo)
+			if err := r.ParseMultipartForm(10 << 20); err != nil {
+				log.Printf("CreateShop: ParseMultipartForm xatosi: %v", err)
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Form ma'lumotlarini o'qishda xatolik",
+				})
+				return
+			}
+
+			// Get form values
+			nameStr = strings.TrimSpace(r.FormValue("name"))
+			descStr = strings.TrimSpace(r.FormValue("description"))
+			phoneStr = strings.TrimSpace(r.FormValue("phone"))
+			addressStr = strings.TrimSpace(r.FormValue("address"))
+			workingHoursStr = strings.TrimSpace(r.FormValue("working_hours"))
+
+			// Parse region_id
+			if regionIDStr := r.FormValue("region_id"); regionIDStr != "" {
+				if rid, err := strconv.Atoi(regionIDStr); err == nil {
+					regionID = &rid
+				}
+			}
+
+			// Get logo file (optional)
+			if file, header, err := r.FormFile("logo"); err == nil {
+				logoFile = file
+				logoFileName = header.Filename
+				defer file.Close()
+			}
 		} else {
+			// Parse JSON body (backward compatibility)
+			var rawReq map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&rawReq); err != nil {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Noto'g'ri so'rov formati",
+				})
+				return
+			}
+
+			// Parse name - accept both formats
+			if nameRaw, ok := rawReq["name"].(string); ok {
+				nameStr = nameRaw
+			} else if shopNameRaw, ok := rawReq["shop_name"].(string); ok {
+				nameStr = shopNameRaw
+			}
+
+			// Parse phone
+			if phoneRaw, ok := rawReq["phone"].(string); ok {
+				phoneStr = phoneRaw
+			} else if supportPhoneRaw, ok := rawReq["support_phone"].(string); ok {
+				phoneStr = supportPhoneRaw
+			}
+
+			// Parse description
+			if descRaw, ok := rawReq["description"].(string); ok {
+				descStr = descRaw
+			}
+
+			// Parse address
+			if addrRaw, ok := rawReq["address"].(string); ok {
+				addressStr = addrRaw
+			}
+
+			// Parse region_id
+			if ridRaw, ok := rawReq["region_id"].(float64); ok {
+				rid := int(ridRaw)
+				regionID = &rid
+			}
+
+			// Parse working_hours (simple string format)
+			if whRaw, ok := rawReq["working_hours"].(string); ok {
+				workingHoursStr = whRaw
+			}
+		}
+
+		// Validate required field: name
+		if nameStr == "" {
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
 				Message: "Do'kon nomi kiritilishi shart",
 			})
 			return
-		}
-
-		if strings.TrimSpace(nameStr) == "" {
-			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
-				Success: false,
-				Message: "Do'kon nomi kiritilishi shart",
-			})
-			return
-		}
-
-		// Get phone - accept both formats
-		var phoneStr string
-		if phoneRaw, ok := rawReq["phone"].(string); ok {
-			phoneStr = phoneRaw
-		} else if supportPhoneRaw, ok := rawReq["support_phone"].(string); ok {
-			phoneStr = supportPhoneRaw
-		}
-
-		// Get description
-		var descStr string
-		if descRaw, ok := rawReq["description"].(string); ok {
-			descStr = descRaw
-		}
-
-		// Prepare name as JSONB (convert string to {"uz": "value"})
-		nameMap := models.StringMap{"uz": nameStr}
-		
-		// Prepare description as JSONB
-		descMap := models.StringMap{}
-		if descStr != "" {
-			descMap["uz"] = descStr
-		}
-
-		// Handle address - can be string or JSONB object (for backward compatibility)
-		addrMap := models.StringMap{}
-		if addrRaw, ok := rawReq["address"]; ok && addrRaw != nil {
-			switch v := addrRaw.(type) {
-			case string:
-				// Plain string from Flutter - convert to JSONB with uz key
-				if v != "" {
-					addrMap["uz"] = v
-				}
-			case map[string]interface{}:
-				// Already JSONB object
-				for k, val := range v {
-					if str, ok := val.(string); ok {
-						addrMap[k] = str
-					}
-				}
-			}
-		}
-
-		// Handle working_hours
-		var workingHours models.WorkingHours
-		if workingHoursRaw, ok := rawReq["working_hours"]; ok {
-			if workingHoursMap, ok := workingHoursRaw.(map[string]interface{}); ok {
-				dayNames := []string{"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
-				for _, dayName := range dayNames {
-					if dayData, ok := workingHoursMap[dayName].(map[string]interface{}); ok {
-						schedule := &models.DaySchedule{}
-						if open, ok := dayData["open"].(string); ok {
-							schedule.Open = open
-						}
-						if close, ok := dayData["close"].(string); ok {
-							schedule.Close = close
-						}
-						if closed, ok := dayData["closed"].(bool); ok {
-							schedule.Closed = closed
-						}
-						switch dayName {
-						case "monday":
-							workingHours.Monday = schedule
-						case "tuesday":
-							workingHours.Tuesday = schedule
-						case "wednesday":
-							workingHours.Wednesday = schedule
-						case "thursday":
-							workingHours.Thursday = schedule
-						case "friday":
-							workingHours.Friday = schedule
-						case "saturday":
-							workingHours.Saturday = schedule
-						case "sunday":
-							workingHours.Sunday = schedule
-						}
-					}
-				}
-			}
 		}
 
 		// Get seller_id from seller_profiles table, or create if doesn't exist
@@ -726,7 +722,7 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		if err == sql.ErrNoRows {
 			// Auto-create seller profile for new users
 			log.Printf("CreateShop: No seller profile found for user %s, creating one...", userID)
-			
+
 			// Get user's full_name to use as legal_name
 			var userFullName string
 			err := db.QueryRow(`SELECT COALESCE(full_name, '') FROM users WHERE id = $1`, userID).Scan(&userFullName)
@@ -764,29 +760,45 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Generate slug from name
+		// ==========================================
+		// 1. SLUG GENERATION with random suffix
+		// ==========================================
+		nameMap := models.StringMap{"uz": nameStr}
 		slug := models.GenerateSlugFromName(nameMap)
 		if slug == "" {
-			slug = models.GenerateSlug(nameStr) // Fallback to old method
+			slug = models.GenerateSlug(nameStr)
 		}
 
-		// Check if slug is unique, if not make it unique
+		// Check if slug exists and make unique with random suffix
 		var existingSlug string
 		slugCheckErr := db.QueryRow(`SELECT slug FROM shops WHERE slug = $1`, slug).Scan(&existingSlug)
 		if slugCheckErr == nil {
-			// Slug exists, make it unique
-			var count int
-			db.QueryRow(`SELECT COUNT(*) FROM shops WHERE slug LIKE $1`, slug+"%").Scan(&count)
-			slug = slug + "-" + string(rune('0'+count+1))
+			// Slug exists, append random 6-char string
+			randomSuffix := generateRandomString(6)
+			slug = slug + "-" + randomSuffix
 		}
 
-		// Check if this is the first shop for this seller (to set is_main)
+		// ==========================================
+		// 2. IS_MAIN AUTO-DETECTION
+		// ==========================================
 		var shopCount int
 		db.QueryRow(`SELECT COUNT(*) FROM shops WHERE seller_id = $1`, sellerID).Scan(&shopCount)
-		isMain := shopCount == 0
+		isMain := shopCount == 0 // First shop is automatically main
+
+		// ==========================================
+		// 3. TRANSLATE ADDRESS via Gemini
+		// ==========================================
+		descMap := models.StringMap{}
+		if descStr != "" {
+			descMap["uz"] = descStr
+		}
+
+		addrMap := models.StringMap{}
+		if addressStr != "" {
+			addrMap["uz"] = addressStr
+		}
 
 		// Auto-translate shop details using Gemini AI
-		// Seller sends only Uzbek, we translate to Russian and English
 		translatedName, translatedDesc, translatedAddr, err := translator.TranslateShop(
 			nameMap["uz"],
 			descMap["uz"],
@@ -813,7 +825,57 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			log.Printf("✅ Shop tarjima muvaffaqiyatli: %s -> ru:%s, en:%s", nameMap["uz"], nameMap["ru"], nameMap["en"])
 		}
 
-		// Prepare JSONB values
+		// ==========================================
+		// 4. WORKING HOURS (OPTIONAL)
+		// ==========================================
+		var simpleHoursValue []byte
+		if workingHoursStr != "" {
+			// Simple format: "09:00 - 18:00" -> {"uz": "09:00 - 18:00", "ru": "09:00 - 18:00", "en": "09:00 - 18:00"}
+			simpleHoursMap := models.StringMap{
+				"uz": workingHoursStr,
+				"ru": workingHoursStr,
+				"en": workingHoursStr,
+			}
+			simpleHoursValue, _ = json.Marshal(simpleHoursMap)
+		} else {
+			// NULL if not provided
+			simpleHoursValue = nil
+		}
+
+		// ==========================================
+		// 5. LOGO UPLOAD
+		// ==========================================
+		var logoURL string
+		if logoFile != nil {
+			// Create uploads directory if not exists
+			uploadsDir := "uploads/shops"
+			if err := os.MkdirAll(uploadsDir, 0755); err != nil {
+				log.Printf("CreateShop: Error creating uploads dir: %v", err)
+			} else {
+				// Generate unique filename
+				ext := filepath.Ext(logoFileName)
+				if ext == "" {
+					ext = ".jpg"
+				}
+				newFileName := fmt.Sprintf("%s%s", uuid.New().String(), ext)
+				filePath := filepath.Join(uploadsDir, newFileName)
+
+				// Save file
+				outFile, err := os.Create(filePath)
+				if err == nil {
+					defer outFile.Close()
+					_, err = io.Copy(outFile, logoFile)
+					if err == nil {
+						logoURL = "/uploads/shops/" + newFileName
+						log.Printf("✅ Logo uploaded: %s", logoURL)
+					}
+				}
+			}
+		}
+
+		// ==========================================
+		// 6. PREPARE JSONB VALUES
+		// ==========================================
 		nameValue, _ := json.Marshal(nameMap)
 		descValue, _ := json.Marshal(descMap)
 		if len(descMap) == 0 {
@@ -823,19 +885,19 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 		if len(addrMap) == 0 {
 			addrValue = []byte("{}")
 		}
-		workingHoursValue, _ := json.Marshal(workingHours)
-		if workingHoursValue == nil || len(workingHoursValue) == 0 {
-			workingHoursValue = []byte("{}")
-		}
 
-		// Insert into shops table
+		// ==========================================
+		// 7. INSERT INTO DATABASE
+		// ==========================================
 		var shop models.Shop
 		var nameJSONB, descJSONB, addrJSONB models.StringMap
+
 		query := `
 			INSERT INTO shops (
 				seller_id, name, description, address, slug,
-				phone, working_hours, is_active, is_main
-			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+				phone, region_id, logo_url, simple_hours,
+				is_active, is_verified, is_main, rating
+			) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 			RETURNING 
 				id, seller_id, name, description, address, slug,
 				COALESCE(logo_url, ''), COALESCE(banner_url, ''),
@@ -845,10 +907,17 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 				created_at, updated_at
 		`
 
+		// Handle NULL for logo_url if empty
+		var logoURLVal interface{} = nil
+		if logoURL != "" {
+			logoURLVal = logoURL
+		}
+
 		err = db.QueryRow(
 			query,
 			sellerID, nameValue, descValue, addrValue, slug,
-			phoneStr, workingHoursValue, true, isMain,
+			phoneStr, regionID, logoURLVal, simpleHoursValue,
+			true, false, isMain, 0.0, // is_active=true, is_verified=false, rating=0
 		).Scan(
 			&shop.ID, &shop.SellerID, &nameJSONB, &descJSONB, &addrJSONB, &shop.Slug,
 			&shop.LogoURL, &shop.BannerURL,
@@ -867,20 +936,31 @@ func CreateShop(db *sql.DB) http.HandlerFunc {
 			log.Printf("CreateShop error: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
 				Success: false,
-				Message: "Do'kon yaratishda xatolik",
+				Message: "Do'kon yaratishda xatolik: " + err.Error(),
 			})
 			return
 		}
 
-		log.Printf("🏪 New shop created: %s (ID: %s) by seller %s", shop.GetName("uz"), shop.ID, sellerID)
+		log.Printf("🏪 New shop created: %s (ID: %s, slug: %s) by seller %s", shop.GetName("uz"), shop.ID, shop.Slug, sellerID)
 
-		// Return shop in response (convert to format Flutter expects)
+		// Return shop in response
 		writeJSON(w, http.StatusCreated, map[string]interface{}{
 			"success": true,
 			"message": "Do'kon muvaffaqiyatli yaratildi",
 			"shop":    shop,
 		})
 	}
+}
+
+// generateRandomString - Generate a random alphanumeric string
+func generateRandomString(length int) string {
+	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		time.Sleep(time.Nanosecond) // Ensure different values
+	}
+	return string(result)
 }
 
 // GetShopByID godoc
