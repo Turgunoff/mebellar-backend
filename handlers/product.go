@@ -437,9 +437,10 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		
 		log.Printf("📦 CreateProduct: Using Shop ID = %s", shopID)
 
-		// Validate that shop exists in database
-		var shopExists bool
-		err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM shops WHERE id = $1)", shopID).Scan(&shopExists)
+		// CRITICAL DEBUG: Verify shop exists with detailed logging
+		var shopCount int
+		var actualShopID string
+		err = db.QueryRow("SELECT COUNT(*), COALESCE(MAX(id::text), '') FROM shops WHERE id = $1", shopID).Scan(&shopCount, &actualShopID)
 		if err != nil {
 			log.Printf("❌ Shop tekshirishda xatolik: %v", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -448,14 +449,36 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 			})
 			return
 		}
-		if !shopExists {
-			log.Printf("❌ Shop topilmadi: %s", shopID)
+		
+		log.Printf("🔍 DEBUG: Shop check - Input ID: '%s', Found count: %d, Actual ID in DB: '%s'", shopID, shopCount, actualShopID)
+		
+		// Also check total shops in database for debugging
+		var totalShops int
+		db.QueryRow("SELECT COUNT(*) FROM shops").Scan(&totalShops)
+		log.Printf("🔍 DEBUG: Total shops in database: %d", totalShops)
+		
+		if shopCount == 0 {
+			// List all shop IDs for debugging
+			rows, _ := db.Query("SELECT id::text FROM shops LIMIT 5")
+			var shopIDs []string
+			if rows != nil {
+				defer rows.Close()
+				for rows.Next() {
+					var id string
+					rows.Scan(&id)
+					shopIDs = append(shopIDs, id)
+				}
+			}
+			log.Printf("🔍 DEBUG: Sample shop IDs in DB: %v", shopIDs)
+			log.Printf("❌ CRITICAL: Shop topilmadi: '%s' - Check if DB connection is correct!", shopID)
 			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
 				Success: false,
-				Message: "Do'kon topilmadi. Iltimos, avval do'kon yarating.",
+				Message: fmt.Sprintf("Do'kon topilmadi (ID: %s). DB da %d ta do'kon bor.", shopID, totalShops),
 			})
 			return
 		}
+		
+		log.Printf("✅ Shop verified: %s exists in database", shopID)
 
 		// Get form values
 		name := r.FormValue("name")
@@ -692,6 +715,10 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		nameValue, _ := nameMap.Value()
 		descValue, _ := descMap.Value()
 
+		// CRITICAL DEBUG: Log exact values being inserted
+		log.Printf("🔍 DEBUG INSERT: product_id=%s, shop_id=%s, category_id=%v", productID, shopID, categoryIDPtr)
+		log.Printf("🔍 DEBUG INSERT: price=%.2f, images=%d, is_new=%v", price, len(imageURLs), isNew)
+		
 		var insertedID string
 		err = db.QueryRow(
 			query,
@@ -712,7 +739,7 @@ func CreateProduct(db *sql.DB) http.HandlerFunc {
 		).Scan(&insertedID)
 
 		if err != nil {
-			log.Printf("❌ Product insert xatosi: %v", err)
+			log.Printf("❌ Product insert xatosi: %v (shop_id was: %s)", err, shopID)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
 				Success: false,
 				Message: "Mahsulot yaratishda xatolik: " + err.Error(),
