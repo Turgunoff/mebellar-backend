@@ -1924,7 +1924,7 @@ func AdminUpdateOrderStatus(db *sql.DB) http.HandlerFunc {
 			UPDATE orders 
 			SET status = $1, seller_note = COALESCE($2, seller_note), updated_at = NOW()
 		`
-		args := []interface{}{req.Status, req.SellerNote}
+		args := []interface{}{req.Status, req.Note}
 
 		if req.Status == "completed" {
 			updateQuery += ", completed_at = NOW()"
