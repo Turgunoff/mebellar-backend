@@ -153,21 +153,31 @@ Product Description (Uzbek): %s`, nameUz, descUz, nameUz, descUz)
 	return result.Name, result.Description, nil
 }
 
-// TranslateShop - Translate shop name, description, and address from Uzbek to Russian and English
+// TranslateShop - Translate shop description and address from Uzbek to Russian and English
+// Shop name is NOT translated (brand names remain consistent across languages)
 // Returns maps with keys: "uz", "ru", "en"
 func TranslateShop(nameUz, descUz, addrUz string) (nameMap, descMap, addrMap map[string]string, err error) {
-	systemPrompt := `You are a professional translator specializing in business and location names.
+	// Shop name is NOT translated - use the same name for all languages (brand identity)
+	nameMap = map[string]string{
+		"uz": nameUz,
+		"ru": nameUz,
+		"en": nameUz,
+	}
+
+	// If description and address are empty, return early (no API call needed)
+	if descUz == "" && addrUz == "" {
+		return nameMap, createFallbackDesc(descUz), createFallbackAddr(addrUz), nil
+	}
+
+	systemPrompt := `You are a professional translator specializing in business descriptions and location names.
 Output ONLY valid JSON without any markdown formatting or code blocks.
 Translate accurately while preserving the original meaning. For addresses, transliterate proper nouns.`
 
-	userPrompt := fmt.Sprintf(`Translate this shop Name, Description, and Address from Uzbek to Russian and English.
+	userPrompt := fmt.Sprintf(`Translate this shop Description and Address from Uzbek to Russian and English.
+IMPORTANT: Do NOT translate the shop name - it is a brand name and should remain unchanged.
+
 Return ONLY a JSON object in this EXACT format (no markdown, no code blocks):
 {
-  "name": {
-    "uz": "%s",
-    "ru": "...",
-    "en": "..."
-  },
   "description": {
     "uz": "%s",
     "ru": "...",
@@ -180,20 +190,18 @@ Return ONLY a JSON object in this EXACT format (no markdown, no code blocks):
   }
 }
 
-Shop Name (Uzbek): %s
 Shop Description (Uzbek): %s
-Shop Address (Uzbek): %s`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
+Shop Address (Uzbek): %s`, descUz, addrUz, descUz, addrUz)
 
 	responseText, err := generateTranslation(systemPrompt, userPrompt)
 	if err != nil {
 		log.Printf("⚠️ TranslateShop failed: %v", err)
 		// Fallback: return original Uzbek text for all languages
-		return createFallbackName(nameUz), createFallbackDesc(descUz), createFallbackAddr(addrUz), nil
+		return nameMap, createFallbackDesc(descUz), createFallbackAddr(addrUz), nil
 	}
 
-	// Parse JSON response
+	// Parse JSON response (only description and address, no name)
 	var result struct {
-		Name        map[string]string `json:"name"`
 		Description map[string]string `json:"description"`
 		Address     map[string]string `json:"address"`
 	}
@@ -204,13 +212,10 @@ Shop Address (Uzbek): %s`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 	if err := json.Unmarshal([]byte(responseText), &result); err != nil {
 		log.Printf("⚠️ Failed to parse DeepSeek JSON response: %v\nResponse: %s", err, responseText)
 		// Fallback: return original Uzbek text for all languages
-		return createFallbackName(nameUz), createFallbackDesc(descUz), createFallbackAddr(addrUz), nil
+		return nameMap, createFallbackDesc(descUz), createFallbackAddr(addrUz), nil
 	}
 
 	// Ensure all required keys exist
-	if result.Name == nil {
-		result.Name = make(map[string]string)
-	}
 	if result.Description == nil {
 		result.Description = make(map[string]string)
 	}
@@ -219,7 +224,6 @@ Shop Address (Uzbek): %s`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 	}
 
 	// Set Uzbek values (preserve original)
-	result.Name["uz"] = nameUz
 	if descUz != "" {
 		result.Description["uz"] = descUz
 	}
@@ -228,12 +232,6 @@ Shop Address (Uzbek): %s`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 	}
 
 	// Ensure ru and en exist (fallback to uz if missing)
-	if result.Name["ru"] == "" {
-		result.Name["ru"] = nameUz
-	}
-	if result.Name["en"] == "" {
-		result.Name["en"] = nameUz
-	}
 	if result.Description["ru"] == "" && descUz != "" {
 		result.Description["ru"] = descUz
 	}
@@ -247,9 +245,9 @@ Shop Address (Uzbek): %s`, nameUz, descUz, addrUz, nameUz, descUz, addrUz)
 		result.Address["en"] = addrUz
 	}
 
-	log.Printf("✅ Shop translated: %s -> ru:%s, en:%s", nameUz, result.Name["ru"], result.Name["en"])
+	log.Printf("✅ Shop translated (name preserved: %s): desc ru:%s, addr ru:%s", nameUz, result.Description["ru"], result.Address["ru"])
 
-	return result.Name, result.Description, result.Address, nil
+	return nameMap, result.Description, result.Address, nil
 }
 
 // Fallback helper functions
