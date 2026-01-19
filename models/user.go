@@ -11,6 +11,7 @@ type User struct {
 	AvatarURL    string    `json:"avatar_url,omitempty"` // COALESCE bilan bo'sh string qaytadi
 	Role         string    `json:"role"`                 // customer, seller, admin
 	OneSignalID  string    `json:"onesignal_id,omitempty"` // OneSignal Player ID for push notifications
+	HasPin       bool      `json:"has_pin"`              // Foydalanuvchi PIN kod o'rnatganmi
 	PasswordHash string    `json:"-"`                    // JSON'da ko'rsatilmasin
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -37,8 +38,10 @@ type RegisterRequest struct {
 
 // LoginRequest - kirish uchun so'rov
 type LoginRequest struct {
-	Phone    string `json:"phone"`
-	Password string `json:"password"`
+	Phone      string `json:"phone"`
+	Password   string `json:"password"`
+	DeviceName string `json:"device_name,omitempty"` // Qurilma nomi (masalan: "iPhone 15 Pro")
+	DeviceID   string `json:"device_id,omitempty"`   // Qurilma unikal ID
 }
 
 // ForgotPasswordRequest - parolni unutdim so'rovi

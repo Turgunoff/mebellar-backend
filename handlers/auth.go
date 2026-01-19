@@ -488,6 +488,59 @@ func Register(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// getClientIP - mijoz IP manzilini olish
+func getClientIP(r *http.Request) string {
+	// X-Forwarded-For header (proxy orqali kelsa)
+	forwarded := r.Header.Get("X-Forwarded-For")
+	if forwarded != "" {
+		// Birinchi IP ni olish (real client IP)
+		parts := regexp.MustCompile(`,\s*`).Split(forwarded, -1)
+		if len(parts) > 0 {
+			return parts[0]
+		}
+	}
+
+	// X-Real-IP header
+	realIP := r.Header.Get("X-Real-IP")
+	if realIP != "" {
+		return realIP
+	}
+
+	// RemoteAddr dan olish
+	ip := r.RemoteAddr
+	// Port ni olib tashlash
+	if colonIdx := regexp.MustCompile(`:\d+$`).FindStringIndex(ip); colonIdx != nil {
+		ip = ip[:colonIdx[0]]
+	}
+	return ip
+}
+
+// createOrUpdateSession - sessiyani yaratish yoki yangilash
+func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceID string, ipAddress string) error {
+	if deviceID == "" {
+		return nil // Device ID bo'lmasa, sessiya yaratmaymiz
+	}
+
+	// Default device name
+	if deviceName == "" {
+		deviceName = "Unknown Device"
+	}
+
+	// UPSERT - mavjud bo'lsa yangilash, bo'lmasa yaratish
+	_, err := db.Exec(`
+		INSERT INTO user_sessions (user_id, device_name, device_id, ip_address, last_active, is_current)
+		VALUES ($1, $2, $3, $4, NOW(), true)
+		ON CONFLICT (user_id, device_id) 
+		DO UPDATE SET 
+			device_name = EXCLUDED.device_name,
+			ip_address = EXCLUDED.ip_address,
+			last_active = NOW(),
+			is_current = true
+	`, userID, deviceName, deviceID, ipAddress)
+
+	return err
+}
+
 // Login godoc
 // @Summary      Tizimga kirish
 // @Description  Telefon raqami va parol orqali tizimga kirish. JWT token qaytaradi.
@@ -519,53 +572,53 @@ func Login(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-	// Foydalanuvchini topish (is_active tekshirish bilan)
-	var user models.User
-	var passwordHash string
-	var isActive bool
-	err := db.QueryRow(`
-		SELECT id, full_name, phone, COALESCE(role, 'customer'), password_hash, 
-		       COALESCE(is_active, true), created_at, updated_at
-		FROM users WHERE phone = $1
-	`, req.Phone).Scan(&user.ID, &user.FullName, &user.Phone, &user.Role, &passwordHash, &isActive, &user.CreatedAt, &user.UpdatedAt)
+		// Foydalanuvchini topish (is_active va has_pin tekshirish bilan)
+		var user models.User
+		var passwordHash string
+		var isActive bool
+		err := db.QueryRow(`
+			SELECT id, full_name, phone, COALESCE(role, 'customer'), password_hash, 
+			       COALESCE(is_active, true), COALESCE(has_pin, false), created_at, updated_at
+			FROM users WHERE phone = $1
+		`, req.Phone).Scan(&user.ID, &user.FullName, &user.Phone, &user.Role, &passwordHash, &isActive, &user.HasPin, &user.CreatedAt, &user.UpdatedAt)
 
-	if err == sql.ErrNoRows {
-		writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
-			Success: false,
-			Message: "Telefon raqami yoki parol noto'g'ri",
-		})
-		return
-	}
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Telefon raqami yoki parol noto'g'ri",
+			})
+			return
+		}
 
-	if err != nil {
-		log.Println("Login query xatosi:", err)
-		writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
-			Success: false,
-			Message: "Server xatosi",
-		})
-		return
-	}
+		if err != nil {
+			log.Println("Login query xatosi:", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Server xatosi",
+			})
+			return
+		}
 
-	// Soft-deleted user login qila olmaydi
-	if !isActive {
-		writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
-			Success: false,
-			Message: "Hisob o'chirilgan. Qayta ro'yxatdan o'ting.",
-		})
-		return
-	}
+		// Soft-deleted user login qila olmaydi
+		if !isActive {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Hisob o'chirilgan. Qayta ro'yxatdan o'ting.",
+			})
+			return
+		}
 
-	// Parolni tekshirish
-	if !checkPassword(req.Password, passwordHash) {
-		writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
-			Success: false,
-			Message: "Telefon raqami yoki parol noto'g'ri",
-		})
-		return
-	}
+		// Parolni tekshirish
+		if !checkPassword(req.Password, passwordHash) {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Telefon raqami yoki parol noto'g'ri",
+			})
+			return
+		}
 
-	// JWT token yaratish (role bilan)
-	token, err := generateJWT(user.ID, user.Phone, user.Role)
+		// JWT token yaratish (role bilan)
+		token, err := generateJWT(user.ID, user.Phone, user.Role)
 		if err != nil {
 			log.Println("JWT xatosi:", err)
 			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
@@ -573,6 +626,17 @@ func Login(db *sql.DB) http.HandlerFunc {
 				Message: "Token yaratishda xatolik",
 			})
 			return
+		}
+
+		// Sessiyani yaratish yoki yangilash (agar device_id berilgan bo'lsa)
+		if req.DeviceID != "" {
+			clientIP := getClientIP(r)
+			if err := createOrUpdateSession(db, user.ID, req.DeviceName, req.DeviceID, clientIP); err != nil {
+				log.Printf("Sessiya yaratishda xatolik: %v", err)
+				// Xatolik bo'lsa ham login muvaffaqiyatli deb hisoblaymiz
+			} else {
+				log.Printf("✅ Session created/updated for user %s, device: %s", user.ID, req.DeviceName)
+			}
 		}
 
 		writeJSON(w, http.StatusOK, models.AuthResponse{

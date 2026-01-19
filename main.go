@@ -127,6 +127,11 @@ func main() {
 	http.HandleFunc("/api/auth/login", handlers.Login(db))
 	http.HandleFunc("/api/auth/forgot-password", handlers.ForgotPassword(db))
 	http.HandleFunc("/api/auth/reset-password", handlers.ResetPassword(db))
+	
+	// --- Session Management (Protected) ---
+	http.HandleFunc("/api/auth/sessions", handlers.JWTMiddleware(db, handlers.SessionsHandler(db)))
+	http.HandleFunc("/api/auth/sessions/", handlers.JWTMiddleware(db, handlers.RevokeSessionHandler(db)))
+	http.HandleFunc("/api/auth/set-pin", handlers.JWTMiddleware(db, handlers.SetPinHandler(db)))
 
 	// --- User (Protected) Endpoints ---
 	http.HandleFunc("/api/user/me", handlers.JWTMiddleware(db, userMeHandler(db)))
