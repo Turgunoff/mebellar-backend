@@ -198,7 +198,7 @@ func main() {
 			"https://mebellar-olami.uz",       // Production Landing
 			"https://api.mebellar-olami.uz",   // API o'zi
 		},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Shop-ID"}, // X-Shop-ID qo'shildi
 		AllowCredentials: true,
 		Debug:            true, // Ishlab chiqish jarayonida yoqib turish foydali

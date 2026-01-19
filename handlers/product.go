@@ -1465,18 +1465,170 @@ func DeleteProduct(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-// SellerProductItemHandler - PUT va DELETE uchun handler (/api/seller/products/{id})
+// ToggleProductStatus godoc
+// @Summary      Mahsulot holatini o'zgartirish (faol/nofaol)
+// @Description  Mahsulotni faol yoki nofaol qilish
+// @Tags         seller-products
+// @Accept       multipart/form-data
+// @Produce      json
+// @Param        id path string true "Mahsulot ID"
+// @Param        X-Shop-ID header string true "Do'kon ID"
+// @Param        is_active formData bool true "Mahsulot holati"
+// @Success      200  {object}  models.ProductResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      403  {object}  models.AuthResponse
+// @Failure      404  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Security     BearerAuth
+// @Router       /seller/products/{id} [patch]
+func ToggleProductStatus(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat PATCH metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Get product ID from URL path
+		path := r.URL.Path
+		parts := strings.Split(path, "/")
+		if len(parts) < 4 {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot ID kerak",
+			})
+			return
+		}
+		productID := parts[len(parts)-1]
+
+		// Validate UUID
+		if _, err := uuid.Parse(productID); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri mahsulot ID formati",
+			})
+			return
+		}
+
+		// Parse form data
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			// Try parsing as regular form
+			if err := r.ParseForm(); err != nil {
+				writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+					Success: false,
+					Message: "Form ma'lumotlarini o'qishda xatolik",
+				})
+				return
+			}
+		}
+
+		// Get shop ID from header OR form body
+		shopID := r.Header.Get("X-Shop-ID")
+		if shopID == "" {
+			shopID = r.FormValue("shop_id")
+		}
+
+		if shopID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "X-Shop-ID header kerak",
+			})
+			return
+		}
+
+		// Validate UUID format for shop ID
+		parsedShopID, err := uuid.Parse(shopID)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Shop ID noto'g'ri format",
+			})
+			return
+		}
+		shopID = parsedShopID.String()
+
+		// Check if product belongs to this shop
+		var existingShopID string
+		err = db.QueryRow(
+			"SELECT COALESCE(shop_id::text, '') FROM products WHERE id = $1",
+			productID,
+		).Scan(&existingShopID)
+
+		if err == sql.ErrNoRows {
+			writeJSON(w, http.StatusNotFound, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulot topilmadi",
+			})
+			return
+		}
+		if err != nil {
+			log.Printf("❌ Product check xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Mahsulotni tekshirishda xatolik",
+			})
+			return
+		}
+
+		// Security check: product must belong to this shop
+		if existingShopID != shopID {
+			writeJSON(w, http.StatusForbidden, models.AuthResponse{
+				Success: false,
+				Message: "Bu mahsulot sizga tegishli emas",
+			})
+			return
+		}
+
+		// Get is_active value from form
+		isActiveStr := r.FormValue("is_active")
+		isActive := isActiveStr == "true"
+
+		log.Printf("🔄 Toggling product status: %s -> is_active: %v", productID, isActive)
+
+		// Update only is_active field
+		query := `UPDATE products SET is_active = $1 WHERE id = $2 RETURNING id`
+		var updatedID string
+		err = db.QueryRow(query, isActive, productID).Scan(&updatedID)
+
+		if err != nil {
+			log.Printf("❌ Product status update xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Holatni yangilashda xatolik: " + err.Error(),
+			})
+			return
+		}
+
+		statusMsg := "Mahsulot faollashtirildi"
+		if !isActive {
+			statusMsg = "Mahsulot nofaol qilindi"
+		}
+
+		log.Printf("✅ Mahsulot holati yangilandi: %s -> is_active: %v", updatedID, isActive)
+
+		writeJSON(w, http.StatusOK, models.AuthResponse{
+			Success: true,
+			Message: statusMsg,
+		})
+	}
+}
+
+// SellerProductItemHandler - PUT, PATCH va DELETE uchun handler (/api/seller/products/{id})
 func SellerProductItemHandler(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPut:
 			UpdateProduct(db)(w, r)
+		case http.MethodPatch:
+			ToggleProductStatus(db)(w, r)
 		case http.MethodDelete:
 			DeleteProduct(db)(w, r)
 		default:
 			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
 				Success: false,
-				Message: "Faqat PUT yoki DELETE metodi qo'llab-quvvatlanadi",
+				Message: "Faqat PUT, PATCH yoki DELETE metodi qo'llab-quvvatlanadi",
 			})
 		}
 	}
