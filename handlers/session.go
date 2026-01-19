@@ -231,9 +231,9 @@ func SetPinHandler(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
-		// Context'dan user_id ni olish
-		userID := r.Context().Value("user_id")
-		if userID == nil {
+		// Header'dan user_id ni olish (JWTMiddleware tomonidan o'rnatilgan)
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
 			writeJSON(w, http.StatusUnauthorized, models.SetPinResponse{
 				Success: false,
 				Message: "Avtorizatsiya talab qilinadi",
