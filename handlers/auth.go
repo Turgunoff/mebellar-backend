@@ -354,10 +354,12 @@ func Register(db *sql.DB) http.HandlerFunc {
 		if err == nil {
 			// User mavjud
 			if isActive {
-				// ACTIVE user - conflict
-				writeJSON(w, http.StatusConflict, models.AuthResponse{
-					Success: false,
-					Message: "Bu telefon raqami allaqachon ro'yxatdan o'tgan",
+				// ACTIVE user - conflict (409)
+				// Frontend bu code ni tekshirib foydalanuvchini Login sahifasiga yo'naltiradi
+				writeJSON(w, http.StatusConflict, map[string]interface{}{
+					"success": false,
+					"code":    "USER_EXISTS",
+					"message": "Bu telefon raqami allaqachon ro'yxatdan o'tgan",
 				})
 				return
 			}
@@ -515,8 +517,11 @@ func getClientIP(r *http.Request) string {
 	return ip
 }
 
-// createOrUpdateSession - sessiyani yaratish yoki yangilash
-func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceID string, ipAddress string) error {
+// SessionExpirationDays - sessiya amal qilish muddati (kunlarda)
+const SessionExpirationDays = 30
+
+// createOrUpdateSession - sessiyani yaratish yoki yangilash (app_type va expires_at bilan)
+func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceID string, ipAddress string, appType string) error {
 	if deviceID == "" {
 		return nil // Device ID bo'lmasa, sessiya yaratmaymiz
 	}
@@ -526,17 +531,25 @@ func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceI
 		deviceName = "Unknown Device"
 	}
 
+	// Default app type
+	if appType == "" {
+		appType = "client"
+	}
+
 	// UPSERT - mavjud bo'lsa yangilash, bo'lmasa yaratish
+	// expires_at = hozirgi vaqt + 30 kun
 	_, err := db.Exec(`
-		INSERT INTO user_sessions (user_id, device_name, device_id, ip_address, last_active, is_current)
-		VALUES ($1, $2, $3, $4, NOW(), true)
+		INSERT INTO user_sessions (user_id, device_name, device_id, ip_address, app_type, last_active, is_current, expires_at)
+		VALUES ($1, $2, $3, $4, $5, NOW(), true, NOW() + INTERVAL '30 days')
 		ON CONFLICT (user_id, device_id) 
 		DO UPDATE SET 
 			device_name = EXCLUDED.device_name,
 			ip_address = EXCLUDED.ip_address,
+			app_type = EXCLUDED.app_type,
 			last_active = NOW(),
-			is_current = true
-	`, userID, deviceName, deviceID, ipAddress)
+			is_current = true,
+			expires_at = NOW() + INTERVAL '30 days'
+	`, userID, deviceName, deviceID, ipAddress, appType)
 
 	return err
 }
@@ -617,6 +630,28 @@ func Login(db *sql.DB) http.HandlerFunc {
 			return
 		}
 
+		// =====================================================
+		// CROSS-APP SECURITY: Role Check
+		// Seller app dan faqat seller va admin kira oladi
+		// Client app dan hamma kira oladi (seller ham, customer ham)
+		// =====================================================
+		deviceInfo := GetDeviceInfoFromRequest(r)
+		appType := deviceInfo.AppType
+		if appType == "" {
+			appType = "client" // Default
+		}
+
+		// Seller app uchun role tekshirish
+		if appType == "seller" && user.Role == "customer" {
+			log.Printf("⛔ Cross-app security: Customer tried to login to seller app (phone: %s)", user.Phone)
+			writeJSON(w, http.StatusForbidden, map[string]interface{}{
+				"success": false,
+				"code":    "USER_IS_CUSTOMER",
+				"message": "Siz sotuvchi emassiz. Iltimos, xaridor ilovasidan foydalaning.",
+			})
+			return
+		}
+
 		// JWT token yaratish (role bilan)
 		token, err := generateJWT(user.ID, user.Phone, user.Role)
 		if err != nil {
@@ -629,13 +664,19 @@ func Login(db *sql.DB) http.HandlerFunc {
 		}
 
 		// Sessiyani yaratish yoki yangilash (agar device_id berilgan bo'lsa)
-		if req.DeviceID != "" {
+		// Headerdan yoki request body dan device_id olish
+		deviceID := deviceInfo.DeviceID
+		if deviceID == "" {
+			deviceID = req.DeviceID // Fallback to request body
+		}
+
+		if deviceID != "" {
 			clientIP := getClientIP(r)
-			if err := createOrUpdateSession(db, user.ID, req.DeviceName, req.DeviceID, clientIP); err != nil {
+			if err := createOrUpdateSession(db, user.ID, req.DeviceName, deviceID, clientIP, appType); err != nil {
 				log.Printf("Sessiya yaratishda xatolik: %v", err)
 				// Xatolik bo'lsa ham login muvaffaqiyatli deb hisoblaymiz
 			} else {
-				log.Printf("✅ Session created/updated for user %s, device: %s", user.ID, req.DeviceName)
+				log.Printf("✅ Session created/updated for user %s, device: %s, app_type: %s", user.ID, req.DeviceName, appType)
 			}
 		}
 

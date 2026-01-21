@@ -143,6 +143,7 @@ func main() {
 	http.HandleFunc("/api/orders", handlers.CustomerOrdersHandler(db)) // Mijoz buyurtmalari
 
 	// --- Seller (Protected) Endpoints ---
+	http.HandleFunc("/api/seller/upgrade", handlers.JWTMiddleware(db, handlers.UpgradeToSeller(db))) // Customer -> Seller upgrade
 	http.HandleFunc("/api/seller/shops", handlers.JWTMiddleware(db, handlers.ShopsHandler(db)))
 	http.HandleFunc("/api/seller/shops/", handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db)))
 	http.HandleFunc("/api/seller/products", handlers.JWTMiddleware(db, handlers.SellerProductsHandler(db)))
@@ -204,7 +205,7 @@ func main() {
 			"https://api.mebellar-olami.uz",   // API o'zi
 		},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Shop-ID"}, // X-Shop-ID qo'shildi
+		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Shop-ID", "X-Device-ID", "x-device-id", "X-App-Type", "x-app-type"}, // Device headers qo'shildi
 		AllowCredentials: true,
 		Debug:            true, // Ishlab chiqish jarayonida yoqib turish foydali
 	})

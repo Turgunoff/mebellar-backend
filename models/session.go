@@ -4,14 +4,17 @@ import "time"
 
 // UserSession - foydalanuvchi sessiyasi modeli (user_sessions jadvali bilan bir xil)
 type UserSession struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"user_id"`
-	DeviceName string    `json:"device_name"`
-	DeviceID   string    `json:"device_id"`
-	IPAddress  string    `json:"ip_address,omitempty"`
-	LastActive time.Time `json:"last_active"`
-	IsCurrent  bool      `json:"is_current"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID         string     `json:"id"`
+	UserID     string     `json:"user_id"`
+	DeviceName string     `json:"device_name"`
+	DeviceID   string     `json:"device_id"`
+	IPAddress  string     `json:"ip_address,omitempty"`
+	AppType    string     `json:"app_type"`              // client, seller, admin
+	IsTrusted  bool       `json:"is_trusted"`            // Qurilma ishonchlimi (2FA uchun)
+	ExpiresAt  *time.Time `json:"expires_at,omitempty"`  // Sessiya tugash vaqti
+	LastActive time.Time  `json:"last_active"`
+	IsCurrent  bool       `json:"is_current"`
+	CreatedAt  time.Time  `json:"created_at"`
 }
 
 // SessionsResponse - sessiyalar ro'yxati javobi

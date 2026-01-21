@@ -23,6 +23,171 @@ import (
 // SELLER PROFILE ENDPOINT (Aggregated)
 // ============================================
 
+// UpgradeToSellerRequest - Customer'ni Seller'ga aylantirish uchun so'rov
+type UpgradeToSellerRequest struct {
+	ShopName    string `json:"shop_name"`    // Do'kon nomi (majburiy)
+	Address     string `json:"address"`      // Do'kon manzili
+	Description string `json:"description"`  // Do'kon tavsifi
+}
+
+// UpgradeToSellerResponse - Seller'ga aylantirish javobi
+type UpgradeToSellerResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+	ShopID  string `json:"shop_id,omitempty"`
+}
+
+// UpgradeToSeller godoc
+// @Summary      Customerdan Sellerga aylantirish
+// @Description  Login qilgan customer foydalanuvchini seller roliga o'tkazadi va yangi do'kon yaratadi
+// @Tags         seller
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request body UpgradeToSellerRequest true "Do'kon ma'lumotlari"
+// @Success      201  {object}  UpgradeToSellerResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      401  {object}  models.AuthResponse
+// @Failure      409  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /seller/upgrade [post]
+func UpgradeToSeller(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat POST metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// JWT dan user_id olish
+		userID := r.Header.Get("X-User-ID")
+		if userID == "" {
+			writeJSON(w, http.StatusUnauthorized, models.AuthResponse{
+				Success: false,
+				Message: "Avtorizatsiya talab qilinadi",
+			})
+			return
+		}
+
+		// Request body ni o'qish
+		var req UpgradeToSellerRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Noto'g'ri so'rov formati",
+			})
+			return
+		}
+
+		// Validatsiya
+		if req.ShopName == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon nomi kiritilishi shart",
+			})
+			return
+		}
+
+		// Foydalanuvchi rolini tekshirish
+		var currentRole string
+		err := db.QueryRow("SELECT COALESCE(role, 'customer') FROM users WHERE id = $1", userID).Scan(&currentRole)
+		if err != nil {
+			log.Printf("User role query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Foydalanuvchi topilmadi",
+			})
+			return
+		}
+
+		// Agar allaqachon seller yoki admin bo'lsa
+		if currentRole == "seller" || currentRole == "admin" {
+			writeJSON(w, http.StatusConflict, models.AuthResponse{
+				Success: false,
+				Message: "Siz allaqachon sotuvchi yoki administrator sifatida ro'yxatdan o'tgansiz",
+			})
+			return
+		}
+
+		// Transaction boshlash
+		tx, err := db.Begin()
+		if err != nil {
+			log.Printf("Transaction start xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Server xatosi",
+			})
+			return
+		}
+		defer tx.Rollback()
+
+		// 1. User rolini seller ga o'zgartirish
+		_, err = tx.Exec("UPDATE users SET role = 'seller', updated_at = NOW() WHERE id = $1", userID)
+		if err != nil {
+			log.Printf("User role update xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Rol yangilashda xatolik",
+			})
+			return
+		}
+
+		// 2. Seller profile (shop) yaratish
+		// Slug yaratish (shop_name dan)
+		slug := strings.ToLower(strings.ReplaceAll(req.ShopName, " ", "-"))
+		slug = fmt.Sprintf("%s-%s", slug, uuid.New().String()[:8])
+
+		var shopID string
+		err = tx.QueryRow(`
+			INSERT INTO seller_profiles (user_id, shop_name, slug, description, is_verified, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, false, NOW(), NOW())
+			RETURNING id
+		`, userID, req.ShopName, slug, req.Description).Scan(&shopID)
+
+		if err != nil {
+			log.Printf("Seller profile create xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Do'kon yaratishda xatolik",
+			})
+			return
+		}
+
+		// 3. Agar address berilgan bo'lsa, shops jadvaliga ham yozish
+		if req.Address != "" {
+			_, err = tx.Exec(`
+				UPDATE seller_profiles 
+				SET address = $1::jsonb
+				WHERE id = $2
+			`, fmt.Sprintf(`{"uz": "%s"}`, req.Address), shopID)
+			if err != nil {
+				log.Printf("Address update xatosi: %v", err)
+				// Davom etamiz - bu kritik xato emas
+			}
+		}
+
+		// Transaction commit
+		if err = tx.Commit(); err != nil {
+			log.Printf("Transaction commit xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Server xatosi",
+			})
+			return
+		}
+
+		log.Printf("✅ User upgraded to seller: userID=%s, shopID=%s, shopName=%s", userID, shopID, req.ShopName)
+
+		writeJSON(w, http.StatusCreated, UpgradeToSellerResponse{
+			Success: true,
+			Message: "Siz muvaffaqiyatli sotuvchi bo'ldingiz! Endi do'koningizni sozlashingiz mumkin.",
+			ShopID:  shopID,
+		})
+	}
+}
+
 // SellerProfileData - Seller profile ma'lumotlari (user + shop stats)
 type SellerProfileData struct {
 	User *UserProfileData `json:"user"`

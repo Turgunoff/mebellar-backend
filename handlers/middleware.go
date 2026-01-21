@@ -10,6 +10,54 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// DeviceInfo - qurilma ma'lumotlarini saqlash uchun struct
+type DeviceInfo struct {
+	DeviceID string
+	AppType  string
+}
+
+// ExtractDeviceInfo - request headerlaridan device_id va app_type ni o'qish
+// Bu middleware barcha so'rovlarda ishlaydi va keyingi handlerlar uchun ma'lumotlarni tayyorlaydi
+func ExtractDeviceInfo(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// x-device-id headerini o'qish
+		deviceID := r.Header.Get("x-device-id")
+		if deviceID == "" {
+			deviceID = r.Header.Get("X-Device-ID") // Case-insensitive fallback
+		}
+
+		// x-app-type headerini o'qish
+		appType := r.Header.Get("x-app-type")
+		if appType == "" {
+			appType = r.Header.Get("X-App-Type") // Case-insensitive fallback
+		}
+
+		// Default qiymat - agar app_type berilmagan bo'lsa
+		if appType == "" {
+			appType = "client"
+		}
+
+		// Faqat ruxsat etilgan qiymatlar
+		if appType != "client" && appType != "seller" && appType != "admin" {
+			appType = "client"
+		}
+
+		// Headerlar orqali keyingi handlerlarga uzatish
+		r.Header.Set("X-Device-ID", deviceID)
+		r.Header.Set("X-App-Type", appType)
+
+		next(w, r)
+	}
+}
+
+// GetDeviceInfoFromRequest - requestdan device ma'lumotlarini olish (helper funksiya)
+func GetDeviceInfoFromRequest(r *http.Request) DeviceInfo {
+	return DeviceInfo{
+		DeviceID: r.Header.Get("X-Device-ID"),
+		AppType:  r.Header.Get("X-App-Type"),
+	}
+}
+
 // RequireRole - Role-based access control middleware
 // Checks if the user's role matches one of the allowed roles
 func RequireRole(db *sql.DB, allowedRoles ...string) func(http.HandlerFunc) http.HandlerFunc {
