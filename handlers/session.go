@@ -43,6 +43,7 @@ func SessionsHandler(db *sql.DB) http.HandlerFunc {
 		// Sessiyalarni olish
 		rows, err := db.Query(`
 			SELECT id, user_id, device_name, device_id, COALESCE(ip_address, ''), 
+			       COALESCE(app_type, 'client'), COALESCE(device_os, ''), COALESCE(os_version, ''), COALESCE(app_version, ''),
 			       last_active, is_current, created_at
 			FROM user_sessions 
 			WHERE user_id = $1 
@@ -67,6 +68,10 @@ func SessionsHandler(db *sql.DB) http.HandlerFunc {
 				&session.DeviceName,
 				&session.DeviceID,
 				&session.IPAddress,
+				&session.AppType,
+				&session.DeviceOS,
+				&session.OSVersion,
+				&session.AppVersion,
 				&session.LastActive,
 				&session.IsCurrent,
 				&session.CreatedAt,

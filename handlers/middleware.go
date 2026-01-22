@@ -12,11 +12,14 @@ import (
 
 // DeviceInfo - qurilma ma'lumotlarini saqlash uchun struct
 type DeviceInfo struct {
-	DeviceID string
-	AppType  string
+	DeviceID   string
+	AppType    string
+	DeviceOS   string // iOS, Android
+	OSVersion  string // 17.2, 14.0
+	AppVersion string // 1.0.0, 1.0.0+12
 }
 
-// ExtractDeviceInfo - request headerlaridan device_id va app_type ni o'qish
+// ExtractDeviceInfo - request headerlaridan device_id, app_type, device_os, os_version, app_version ni o'qish
 // Bu middleware barcha so'rovlarda ishlaydi va keyingi handlerlar uchun ma'lumotlarni tayyorlaydi
 func ExtractDeviceInfo(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -42,9 +45,30 @@ func ExtractDeviceInfo(next http.HandlerFunc) http.HandlerFunc {
 			appType = "client"
 		}
 
+		// x-device-os headerini o'qish (iOS, Android)
+		deviceOS := r.Header.Get("x-device-os")
+		if deviceOS == "" {
+			deviceOS = r.Header.Get("X-Device-OS")
+		}
+
+		// x-os-version headerini o'qish (17.2, 14.0)
+		osVersion := r.Header.Get("x-os-version")
+		if osVersion == "" {
+			osVersion = r.Header.Get("X-OS-Version")
+		}
+
+		// x-app-version headerini o'qish (1.0.0, 1.0.0+12)
+		appVersion := r.Header.Get("x-app-version")
+		if appVersion == "" {
+			appVersion = r.Header.Get("X-App-Version")
+		}
+
 		// Headerlar orqali keyingi handlerlarga uzatish
 		r.Header.Set("X-Device-ID", deviceID)
 		r.Header.Set("X-App-Type", appType)
+		r.Header.Set("X-Device-OS", deviceOS)
+		r.Header.Set("X-OS-Version", osVersion)
+		r.Header.Set("X-App-Version", appVersion)
 
 		next(w, r)
 	}
@@ -53,8 +77,11 @@ func ExtractDeviceInfo(next http.HandlerFunc) http.HandlerFunc {
 // GetDeviceInfoFromRequest - requestdan device ma'lumotlarini olish (helper funksiya)
 func GetDeviceInfoFromRequest(r *http.Request) DeviceInfo {
 	return DeviceInfo{
-		DeviceID: r.Header.Get("X-Device-ID"),
-		AppType:  r.Header.Get("X-App-Type"),
+		DeviceID:   r.Header.Get("X-Device-ID"),
+		AppType:    r.Header.Get("X-App-Type"),
+		DeviceOS:   r.Header.Get("X-Device-OS"),
+		OSVersion:  r.Header.Get("X-OS-Version"),
+		AppVersion: r.Header.Get("X-App-Version"),
 	}
 }
 

@@ -520,8 +520,8 @@ func getClientIP(r *http.Request) string {
 // SessionExpirationDays - sessiya amal qilish muddati (kunlarda)
 const SessionExpirationDays = 30
 
-// createOrUpdateSession - sessiyani yaratish yoki yangilash (app_type va expires_at bilan)
-func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceID string, ipAddress string, appType string) error {
+// createOrUpdateSession - sessiyani yaratish yoki yangilash (app_type, device_os, os_version, app_version va expires_at bilan)
+func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceID string, ipAddress string, appType string, deviceOS string, osVersion string, appVersion string) error {
 	if deviceID == "" {
 		return nil // Device ID bo'lmasa, sessiya yaratmaymiz
 	}
@@ -539,17 +539,20 @@ func createOrUpdateSession(db *sql.DB, userID string, deviceName string, deviceI
 	// UPSERT - mavjud bo'lsa yangilash, bo'lmasa yaratish
 	// expires_at = hozirgi vaqt + 30 kun
 	_, err := db.Exec(`
-		INSERT INTO user_sessions (user_id, device_name, device_id, ip_address, app_type, last_active, is_current, expires_at)
-		VALUES ($1, $2, $3, $4, $5, NOW(), true, NOW() + INTERVAL '30 days')
+		INSERT INTO user_sessions (user_id, device_name, device_id, ip_address, app_type, device_os, os_version, app_version, last_active, is_current, expires_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), true, NOW() + INTERVAL '30 days')
 		ON CONFLICT (user_id, device_id) 
 		DO UPDATE SET 
 			device_name = EXCLUDED.device_name,
 			ip_address = EXCLUDED.ip_address,
 			app_type = EXCLUDED.app_type,
+			device_os = EXCLUDED.device_os,
+			os_version = EXCLUDED.os_version,
+			app_version = EXCLUDED.app_version,
 			last_active = NOW(),
 			is_current = true,
 			expires_at = NOW() + INTERVAL '30 days'
-	`, userID, deviceName, deviceID, ipAddress, appType)
+	`, userID, deviceName, deviceID, ipAddress, appType, deviceOS, osVersion, appVersion)
 
 	return err
 }
@@ -672,11 +675,11 @@ func Login(db *sql.DB) http.HandlerFunc {
 
 		if deviceID != "" {
 			clientIP := getClientIP(r)
-			if err := createOrUpdateSession(db, user.ID, req.DeviceName, deviceID, clientIP, appType); err != nil {
+			if err := createOrUpdateSession(db, user.ID, req.DeviceName, deviceID, clientIP, appType, deviceInfo.DeviceOS, deviceInfo.OSVersion, deviceInfo.AppVersion); err != nil {
 				log.Printf("Sessiya yaratishda xatolik: %v", err)
 				// Xatolik bo'lsa ham login muvaffaqiyatli deb hisoblaymiz
 			} else {
-				log.Printf("✅ Session created/updated for user %s, device: %s, app_type: %s", user.ID, req.DeviceName, appType)
+				log.Printf("✅ Session created/updated for user %s, device: %s, app_type: %s, os: %s %s, app_ver: %s", user.ID, req.DeviceName, appType, deviceInfo.DeviceOS, deviceInfo.OSVersion, deviceInfo.AppVersion)
 			}
 		}
 

@@ -10,6 +10,9 @@ type UserSession struct {
 	DeviceID   string     `json:"device_id"`
 	IPAddress  string     `json:"ip_address,omitempty"`
 	AppType    string     `json:"app_type"`              // client, seller, admin
+	DeviceOS   string     `json:"device_os,omitempty"`   // iOS, Android
+	OSVersion  string     `json:"os_version,omitempty"`  // 17.2, 14.0
+	AppVersion string     `json:"app_version,omitempty"` // 1.0.0, 1.0.0+12
 	IsTrusted  bool       `json:"is_trusted"`            // Qurilma ishonchlimi (2FA uchun)
 	ExpiresAt  *time.Time `json:"expires_at,omitempty"`  // Sessiya tugash vaqti
 	LastActive time.Time  `json:"last_active"`
