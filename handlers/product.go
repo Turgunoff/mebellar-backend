@@ -407,7 +407,7 @@ func GetProductsGroupedBySubcategory(db *sql.DB) http.HandlerFunc {
 		// 1. Barcha active sub-kategoriyalarni olish
 		subCategoriesQuery := `
 			SELECT 
-				id, parent_id, COALESCE(name::text, '{}')::jsonb, slug, icon_url, is_active, sort_order,
+				id, parent_id, COALESCE(name::text, '{}')::jsonb, COALESCE(slug, ''), COALESCE(icon_url, ''), is_active, sort_order,
 				(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
 			FROM categories c
 			WHERE parent_id = $1 AND is_active = true
