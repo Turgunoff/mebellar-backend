@@ -44,6 +44,7 @@ func GetProducts(db *sql.DB) http.HandlerFunc {
 
 		// Query parametrlarini olish
 		categoryID := r.URL.Query().Get("category_id")
+		parentID := r.URL.Query().Get("parent_id")
 		isNew := r.URL.Query().Get("is_new")
 		isPopular := r.URL.Query().Get("is_popular")
 
@@ -61,9 +62,14 @@ func GetProducts(db *sql.DB) http.HandlerFunc {
 		var args []interface{}
 		argIndex := 1
 
-		// Kategoriya filtri
-		if categoryID != "" {
-			query += ` AND category_id = $` + string(rune('0'+argIndex))
+		// Parent ID filtri (barcha sub-kategoriyalardagi mahsulotlar + parent kategoriyadagi mahsulotlar)
+		if parentID != "" {
+			query += ` AND (category_id = $` + fmt.Sprintf("%d", argIndex) + ` OR category_id IN (SELECT id FROM categories WHERE parent_id = $` + fmt.Sprintf("%d", argIndex) + `))`
+			args = append(args, parentID)
+			argIndex++
+		} else if categoryID != "" {
+			// Kategoriya filtri (faqat bitta kategoriya)
+			query += ` AND category_id = $` + fmt.Sprintf("%d", argIndex)
 			args = append(args, categoryID)
 			argIndex++
 		}
