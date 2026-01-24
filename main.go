@@ -116,6 +116,7 @@ func main() {
 	http.HandleFunc("/api/products", handlers.GetProducts(db))
 	http.HandleFunc("/api/products/new", handlers.GetNewArrivals(db))
 	http.HandleFunc("/api/products/popular", handlers.GetPopularProducts(db))
+	http.HandleFunc("/api/products/grouped-by-subcategory", handlers.GetProductsGroupedBySubcategory(db))
 	http.HandleFunc("/api/products/", handlers.GetProductByID(db))
 	http.HandleFunc("/api/shops/", handlers.GetPublicShopBySlug(db))
 	http.HandleFunc("/api/common/cancellation-reasons", handlers.GetCancellationReasons(db))

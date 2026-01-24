@@ -364,6 +364,159 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 	}
 }
 
+// GetProductsGroupedBySubcategory godoc
+// @Summary      Sub-kategoriyalar bo'yicha guruhlangan mahsulotlar
+// @Description  Parent kategoriya uchun barcha sub-kategoriyalardan preview mahsulotlarni qaytaradi (Netflix-style instant switching uchun)
+// @Tags         products
+// @Accept       json
+// @Produce      json
+// @Param        parent_id query string true "Parent kategoriya ID"
+// @Param        limit_per_cat query int false "Har bir sub-kategoriya uchun mahsulotlar soni (default: 10)"
+// @Success      200  {object}  models.GroupedProductsResponse
+// @Failure      400  {object}  models.AuthResponse
+// @Failure      500  {object}  models.AuthResponse
+// @Router       /products/grouped-by-subcategory [get]
+func GetProductsGroupedBySubcategory(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			writeJSON(w, http.StatusMethodNotAllowed, models.AuthResponse{
+				Success: false,
+				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
+			})
+			return
+		}
+
+		// Query parametrlarini olish
+		parentID := r.URL.Query().Get("parent_id")
+		if parentID == "" {
+			writeJSON(w, http.StatusBadRequest, models.AuthResponse{
+				Success: false,
+				Message: "parent_id parametri talab qilinadi",
+			})
+			return
+		}
+
+		// limit_per_cat ni olish (default: 10)
+		limitPerCat := 10
+		if limitStr := r.URL.Query().Get("limit_per_cat"); limitStr != "" {
+			if parsedLimit, err := strconv.Atoi(limitStr); err == nil && parsedLimit > 0 {
+				limitPerCat = parsedLimit
+			}
+		}
+
+		// 1. Barcha active sub-kategoriyalarni olish
+		subCategoriesQuery := `
+			SELECT 
+				id, parent_id, COALESCE(name::text, '{}')::jsonb, slug, icon_url, is_active, sort_order,
+				(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
+			FROM categories c
+			WHERE parent_id = $1 AND is_active = true
+			ORDER BY sort_order ASC, name->>'uz' ASC
+		`
+
+		subCatRows, err := db.Query(subCategoriesQuery, parentID)
+		if err != nil {
+			log.Printf("Sub-categories query xatosi: %v", err)
+			writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+				Success: false,
+				Message: "Sub-kategoriyalarni olishda xatolik",
+			})
+			return
+		}
+		defer subCatRows.Close()
+
+		var subCategories []models.Category
+		for subCatRows.Next() {
+			var cat models.Category
+			var nameJSONB models.StringMap
+			err := subCatRows.Scan(
+				&cat.ID, &cat.ParentID, &nameJSONB, &cat.Slug, &cat.IconURL,
+				&cat.IsActive, &cat.SortOrder, &cat.ProductCount,
+			)
+			if err == nil {
+				cat.Name = nameJSONB
+			}
+			if err != nil {
+				log.Printf("Sub-category scan xatosi: %v", err)
+				continue
+			}
+			subCategories = append(subCategories, cat)
+		}
+
+		if len(subCategories) == 0 {
+			writeJSON(w, http.StatusOK, models.GroupedProductsResponse{
+				Success: true,
+				Message: "Sub-kategoriyalar topilmadi",
+				Groups:  []models.CategoryProductsGroup{},
+				Count:   0,
+			})
+			return
+		}
+
+		// 2. Har bir sub-kategoriya uchun preview mahsulotlarni olish
+		groups := []models.CategoryProductsGroup{}
+
+		for _, subCat := range subCategories {
+			// Preview mahsulotlarni olish
+			productsQuery := `
+				SELECT 
+					id, shop_id, category_id, COALESCE(name::text, '{}')::jsonb, COALESCE(description::text, '{}')::jsonb, 
+					price, discount_price, COALESCE(images, '{}'), COALESCE(specs::text, '{}')::jsonb, 
+					COALESCE(variants::text, '[]')::jsonb, rating, is_new, is_popular, is_active, created_at
+				FROM products 
+				WHERE category_id = $1 AND is_active = true
+				ORDER BY created_at DESC
+				LIMIT $2
+			`
+
+			productRows, err := db.Query(productsQuery, subCat.ID, limitPerCat)
+			if err != nil {
+				log.Printf("Products query xatosi (category %s): %v", subCat.ID, err)
+				continue
+			}
+
+			var products []models.Product
+			for productRows.Next() {
+				var p models.Product
+				var nameJSONB, descJSONB models.StringMap
+				err := productRows.Scan(
+					&p.ID, &p.ShopID, &p.CategoryID, &nameJSONB, &descJSONB, &p.Price, &p.DiscountPrice,
+					&p.Images, &p.Specs, &p.Variants,
+					&p.Rating, &p.IsNew, &p.IsPopular, &p.IsActive, &p.CreatedAt,
+				)
+				if err == nil {
+					p.Name = nameJSONB
+					p.Description = descJSONB
+				}
+				if err != nil {
+					log.Printf("Product scan xatosi: %v", err)
+					continue
+				}
+				products = append(products, p)
+			}
+			productRows.Close()
+
+			// Jami mahsulotlar sonini tekshirish (has_more uchun)
+			hasMore := subCat.ProductCount > len(products)
+
+			groups = append(groups, models.CategoryProductsGroup{
+				Category: subCat,
+				Products: products,
+				Total:    subCat.ProductCount,
+				HasMore:  hasMore,
+			})
+		}
+
+		log.Printf("✅ %d ta sub-kategoriya uchun preview mahsulotlar yuklandi", len(groups))
+
+		writeJSON(w, http.StatusOK, models.GroupedProductsResponse{
+			Success: true,
+			Groups:  groups,
+			Count:   len(groups),
+		})
+	}
+}
+
 // CreateProduct godoc
 // @Summary      Yangi mahsulot yaratish (Seller)
 // @Description  Seller uchun yangi mahsulot qo'shish. Multipart form-data kerak.

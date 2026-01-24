@@ -345,4 +345,20 @@ type ProductsResponse struct {
 	Count    int       `json:"count"`
 }
 
+// CategoryProductsGroup - kategoriya va uning mahsulotlari guruhi
+type CategoryProductsGroup struct {
+	Category  Category  `json:"category"`
+	Products  []Product `json:"products"`
+	Total     int       `json:"total"`     // Jami mahsulotlar soni (preview emas)
+	HasMore   bool      `json:"has_more"`  // Yana mahsulotlar bormi
+}
+
+// GroupedProductsResponse - guruhlangan mahsulotlar javob modeli
+type GroupedProductsResponse struct {
+	Success bool                   `json:"success"`
+	Message string                 `json:"message,omitempty"`
+	Groups  []CategoryProductsGroup `json:"groups"`
+	Count   int                    `json:"count"` // Jami guruhlar soni
+}
+
 // Category - kategoriya modeli category.go faylida aniqlangan
