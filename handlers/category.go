@@ -113,6 +113,7 @@ func scanCategoryName(nameJSON []byte) (map[string]string, error) {
 // @Accept       json
 // @Produce      json
 // @Param        flat query bool false "Tekis ro'yxat (default: false)"
+// @Param        parent_id query string false "Parent kategoriya ID (sub-kategoriyalarni olish uchun)"
 // @Success      200  {object}  models.CategoriesResponse
 // @Failure      500  {object}  models.AuthResponse
 // @Router       /categories [get]
@@ -123,6 +124,14 @@ func GetCategories(db *sql.DB) http.HandlerFunc {
 				Success: false,
 				Message: "Faqat GET metodi qo'llab-quvvatlanadi",
 			})
+			return
+		}
+
+		// parent_id parametrini tekshirish (sub-kategoriyalar uchun)
+		parentID := r.URL.Query().Get("parent_id")
+		if parentID != "" {
+			// Faqat berilgan parent_id ga tegishli sub-kategoriyalarni qaytarish
+			getSubCategoriesByParentID(db, w, parentID)
 			return
 		}
 
@@ -260,6 +269,59 @@ func getFlatCategories(db *sql.DB, w http.ResponseWriter) {
 	}
 
 	log.Printf("✅ %d ta kategoriya topildi (flat)", len(categories))
+
+	writeJSON(w, http.StatusOK, models.CategoriesResponse{
+		Success:    true,
+		Categories: categories,
+		Count:      len(categories),
+	})
+}
+
+// getSubCategoriesByParentID - berilgan parent_id ga tegishli sub-kategoriyalarni olish
+func getSubCategoriesByParentID(db *sql.DB, w http.ResponseWriter, parentID string) {
+	query := `
+		SELECT 
+			c.id, c.parent_id, c.name::text, COALESCE(c.slug, ''), COALESCE(c.icon_url, ''),
+			COALESCE(c.is_active, true), COALESCE(c.sort_order, 0),
+			(SELECT COUNT(*) FROM products p WHERE p.category_id = c.id AND p.is_active = true) as product_count
+		FROM categories c
+		WHERE c.is_active = true AND c.parent_id = $1
+		ORDER BY c.sort_order ASC, c.name->>'uz' ASC
+	`
+
+	rows, err := db.Query(query, parentID)
+	if err != nil {
+		log.Printf("SubCategories query xatosi: %v", err)
+		writeJSON(w, http.StatusInternalServerError, models.AuthResponse{
+			Success: false,
+			Message: "Sub-kategoriyalarni olishda xatolik",
+		})
+		return
+	}
+	defer rows.Close()
+
+	categories := []models.Category{}
+	for rows.Next() {
+		var c models.Category
+		var nameJSON string
+		err := rows.Scan(&c.ID, &c.ParentID, &nameJSON, &c.Slug, &c.IconURL, &c.IsActive, &c.SortOrder, &c.ProductCount)
+		if err != nil {
+			log.Printf("SubCategory scan xatosi: %v", err)
+			continue
+		}
+
+		// JSONB ni map ga o'tkazish
+		c.Name, err = scanCategoryName([]byte(nameJSON))
+		if err != nil {
+			log.Printf("SubCategory name parse xatosi: %v", err)
+			c.Name = map[string]string{"uz": "", "ru": "", "en": ""}
+		}
+
+		c.SubCategories = []models.Category{} // Initialize empty
+		categories = append(categories, c)
+	}
+
+	log.Printf("✅ %d ta sub-kategoriya topildi (parent_id: %s)", len(categories), parentID)
 
 	writeJSON(w, http.StatusOK, models.CategoriesResponse{
 		Success:    true,
