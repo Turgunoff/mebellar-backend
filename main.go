@@ -120,6 +120,7 @@ func main() {
 	http.HandleFunc("/api/products/", handlers.GetProductByID(db))
 	http.HandleFunc("/api/shops/", handlers.GetPublicShopBySlug(db))
 	http.HandleFunc("/api/common/cancellation-reasons", handlers.GetCancellationReasons(db))
+	http.HandleFunc("/api/banners", handlers.GetBanners(db))
 
 	// --- Auth Endpoints ---
 	http.HandleFunc("/api/auth/send-otp", handlers.SendOTP(db))
