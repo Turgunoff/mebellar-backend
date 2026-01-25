@@ -317,9 +317,9 @@ func GetPopularProducts(db *sql.DB) http.HandlerFunc {
 				COALESCE(variants::text, '[]')::jsonb,
 				rating, is_new, is_popular, is_active, created_at
 			FROM products 
-			WHERE is_active = true AND is_popular = true
-			ORDER BY rating DESC
-			LIMIT 10
+			WHERE is_active = true
+			ORDER BY created_at DESC
+			LIMIT 50
 		`
 
 		rows, err := db.Query(query)
