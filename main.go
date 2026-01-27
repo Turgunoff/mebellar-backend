@@ -107,10 +107,20 @@ func main() {
 		"/order.OrderService/CreateOrder": true,
 	}
 
-	unaryInterceptor, streamInterceptor := middleware.NewAuthInterceptors(
+	unaryAuthInterceptor, streamAuthInterceptor := middleware.NewAuthInterceptors(
 		[]byte(jwtSecret),
 		db,
 		skipAuthMethods,
+	)
+
+	// Chain interceptors: Logger first, then Auth
+	unaryInterceptor := grpc.ChainUnaryInterceptor(
+		middleware.UnaryLogger,
+		unaryAuthInterceptor,
+	)
+	streamInterceptor := grpc.ChainStreamInterceptor(
+		middleware.StreamLogger,
+		streamAuthInterceptor,
 	)
 
 	grpcServer := grpc.NewServer(
@@ -121,6 +131,9 @@ func main() {
 	// Register all gRPC services
 	authService := server.NewAuthServiceServer(db, []byte(jwtSecret))
 	pb.RegisterAuthServiceServer(grpcServer, authService)
+
+	userService := server.NewUserServiceServer(db)
+	pb.RegisterUserServiceServer(grpcServer, userService)
 
 	orderService := server.NewOrderServiceServer(db)
 	pb.RegisterOrderServiceServer(grpcServer, orderService)
@@ -177,7 +190,7 @@ func main() {
 			log.Fatalf("❌ gRPC listener xatosi: %v", err)
 		}
 		fmt.Printf("✅ gRPC Server %s-portda tayyor!\n", grpcPort)
-		fmt.Println("📡 Registered services: AuthService, OrderService, ProductService, CategoryService, ShopService, CommonService")
+		fmt.Println("📡 Registered services: AuthService, UserService, OrderService, ProductService, CategoryService, ShopService, CommonService")
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("❌ gRPC server xatosi: %v", err)
 		}
