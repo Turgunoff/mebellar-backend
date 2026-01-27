@@ -5,16 +5,7 @@ package shop;
 option go_package = "mebellar-backend/pkg/pb;pb";
 
 import "google/protobuf/timestamp.proto";
-
-// ============================================
-// SHARED TYPES
-// ============================================
-
-message LocalizedString {
-  string uz = 1;
-  string ru = 2;
-  string en = 3;
-}
+import "common.proto";
 
 // ============================================
 // WORKING HOURS
@@ -55,9 +46,9 @@ message SocialLinks {
 message Shop {
   string id = 1;
   string seller_id = 2;
-  LocalizedString name = 3;
-  LocalizedString description = 4;
-  LocalizedString address = 5;
+  common.LocalizedString name = 3;
+  common.LocalizedString description = 4;
+  common.LocalizedString address = 5;
   string slug = 6;
   string logo_url = 7;
   string banner_url = 8;
@@ -65,7 +56,7 @@ message Shop {
   double latitude = 10;
   double longitude = 11;
   int32 region_id = 12;
-  LocalizedString region_name = 13;
+  common.LocalizedString region_name = 13;
   WorkingHours working_hours = 14;
   bool is_active = 15;
   bool is_verified = 16;
@@ -100,7 +91,7 @@ message SellerProfile {
   
   // Contact & location
   string support_phone = 12;
-  LocalizedString address = 13;
+  common.LocalizedString address = 13;
   double latitude = 14;
   double longitude = 15;
   
@@ -123,7 +114,7 @@ message PublicSellerProfile {
   string logo_url = 5;
   string banner_url = 6;
   string support_phone = 7;
-  LocalizedString address = 8;
+  common.LocalizedString address = 8;
   double latitude = 9;
   double longitude = 10;
   SocialLinks social_links = 11;
@@ -175,9 +166,9 @@ message ShopResponse {
 }
 
 message CreateShopRequest {
-  LocalizedString name = 1;
-  LocalizedString description = 2;
-  LocalizedString address = 3;
+  common.LocalizedString name = 1;
+  common.LocalizedString description = 2;
+  common.LocalizedString address = 3;
   string phone = 4;
   int32 region_id = 5;
   double latitude = 6;
@@ -189,9 +180,9 @@ message CreateShopRequest {
 
 message UpdateShopRequest {
   string id = 1;
-  optional LocalizedString name = 2;
-  optional LocalizedString description = 3;
-  optional LocalizedString address = 4;
+  optional common.LocalizedString name = 2;
+  optional common.LocalizedString description = 3;
+  optional common.LocalizedString address = 4;
   optional string phone = 5;
   optional int32 region_id = 6;
   optional double latitude = 7;
@@ -229,7 +220,7 @@ message UpgradeToSellerRequest {
   string shop_name = 1;
   string description = 2;
   string support_phone = 3;
-  LocalizedString address = 4;
+  common.LocalizedString address = 4;
   SocialLinks social_links = 5;
   WorkingHours working_hours = 6;
 }
@@ -246,7 +237,7 @@ message UpdateSellerProfileRequest {
   optional string logo_url = 3;
   optional string banner_url = 4;
   optional string support_phone = 5;
-  optional LocalizedString address = 6;
+  optional common.LocalizedString address = 6;
   optional double latitude = 7;
   optional double longitude = 8;
   optional SocialLinks social_links = 9;
@@ -308,13 +299,10 @@ message AdminUpdateShopRequest {
   optional bool is_verified = 2;
   optional bool is_active = 3;
   // Admin can update all shop fields
-  optional LocalizedString name = 4;
-  optional LocalizedString description = 5;
-  optional LocalizedString address = 6;
+  optional common.LocalizedString name = 4;
+  optional common.LocalizedString description = 5;
+  optional common.LocalizedString address = 6;
 }
-
-// Empty message
-message Empty {}
 
 // ============================================
 // SHOP SERVICE
@@ -330,7 +318,7 @@ service ShopService {
   rpc GetShop(GetShopRequest) returns (ShopResponse);
   rpc CreateShop(CreateShopRequest) returns (ShopResponse);
   rpc UpdateShop(UpdateShopRequest) returns (ShopResponse);
-  rpc DeleteShop(DeleteShopRequest) returns (Empty);
+  rpc DeleteShop(DeleteShopRequest) returns (common.Empty);
   
   // Seller profile management
   rpc GetSellerProfile(GetSellerProfileRequest) returns (SellerProfileResponse);
@@ -346,5 +334,5 @@ service ShopService {
   rpc AdminListShops(AdminListShopsRequest) returns (ListShopsResponse);
   rpc AdminGetShop(GetShopRequest) returns (ShopResponse);
   rpc AdminUpdateShop(AdminUpdateShopRequest) returns (ShopResponse);
-  rpc AdminDeleteShop(DeleteShopRequest) returns (Empty);
+  rpc AdminDeleteShop(DeleteShopRequest) returns (common.Empty);
 }

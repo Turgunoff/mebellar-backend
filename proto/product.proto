@@ -6,16 +6,7 @@ option go_package = "mebellar-backend/pkg/pb;pb";
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
-
-// ============================================
-// SHARED TYPES
-// ============================================
-
-message LocalizedString {
-  string uz = 1;
-  string ru = 2;
-  string en = 3;
-}
+import "common.proto";
 
 // ============================================
 // DELIVERY SETTINGS
@@ -57,8 +48,8 @@ message Product {
   string id = 1;
   string shop_id = 2;
   string category_id = 3;
-  LocalizedString name = 4;
-  LocalizedString description = 5;
+  common.LocalizedString name = 4;
+  common.LocalizedString description = 5;
   double price = 6;
   double discount_price = 7;
   repeated string images = 8;
@@ -124,8 +115,8 @@ message ProductResponse {
 message CreateProductRequest {
   string shop_id = 1;
   string category_id = 2;
-  LocalizedString name = 3;
-  LocalizedString description = 4;
+  common.LocalizedString name = 3;
+  common.LocalizedString description = 4;
   double price = 5;
   double discount_price = 6;
   repeated string images = 7;
@@ -140,8 +131,8 @@ message CreateProductRequest {
 message UpdateProductRequest {
   string id = 1;
   optional string category_id = 2;
-  optional LocalizedString name = 3;
-  optional LocalizedString description = 4;
+  optional common.LocalizedString name = 3;
+  optional common.LocalizedString description = 4;
   optional double price = 5;
   optional double discount_price = 6;
   repeated string images = 7;  // Replaces all images
@@ -214,7 +205,7 @@ message ListPopularProductsRequest {
 
 message CategoryProductsGroup {
   string category_id = 1;
-  LocalizedString category_name = 2;
+  common.LocalizedString category_name = 2;
   string category_slug = 3;
   repeated Product products = 4;
   int32 total = 5;
@@ -242,9 +233,6 @@ message ListSellerProductsRequest {
   int32 limit = 4;
 }
 
-// Empty message
-message Empty {}
-
 // ============================================
 // PRODUCT SERVICE
 // ============================================
@@ -261,7 +249,7 @@ service ProductService {
   rpc ListSellerProducts(ListSellerProductsRequest) returns (ListProductsResponse);
   rpc CreateProduct(CreateProductRequest) returns (ProductResponse);
   rpc UpdateProduct(UpdateProductRequest) returns (ProductResponse);
-  rpc DeleteProduct(DeleteProductRequest) returns (Empty);
+  rpc DeleteProduct(DeleteProductRequest) returns (common.Empty);
   rpc ToggleProductStatus(ToggleProductStatusRequest) returns (ProductResponse);
 
   // Image upload via streaming

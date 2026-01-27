@@ -5,16 +5,7 @@ package category;
 option go_package = "mebellar-backend/pkg/pb;pb";
 
 import "google/protobuf/timestamp.proto";
-
-// ============================================
-// SHARED TYPES
-// ============================================
-
-message LocalizedString {
-  string uz = 1;
-  string ru = 2;
-  string en = 3;
-}
+import "common.proto";
 
 // ============================================
 // CATEGORY ATTRIBUTE (Dynamic Form Fields)
@@ -22,7 +13,7 @@ message LocalizedString {
 
 message AttributeOption {
   string value = 1;
-  LocalizedString label = 2;
+  common.LocalizedString label = 2;
 }
 
 message CategoryAttribute {
@@ -30,7 +21,7 @@ message CategoryAttribute {
   string category_id = 2;
   string key = 3;
   string type = 4;  // text, number, dropdown, switch
-  LocalizedString label = 5;
+  common.LocalizedString label = 5;
   repeated AttributeOption options = 6;
   bool is_required = 7;
   int32 sort_order = 8;
@@ -45,7 +36,7 @@ message CategoryAttribute {
 message Category {
   string id = 1;
   string parent_id = 2;
-  LocalizedString name = 3;
+  common.LocalizedString name = 3;
   string slug = 4;
   string icon_url = 5;
   bool is_active = 6;
@@ -60,7 +51,7 @@ message FlatCategory {
   string id = 1;
   string parent_id = 2;
   string parent_name = 3;
-  LocalizedString name = 4;
+  common.LocalizedString name = 4;
   string icon_url = 5;
   bool is_active = 6;
   int32 sort_order = 7;
@@ -98,7 +89,7 @@ message CategoryResponse {
 
 message CreateCategoryRequest {
   string parent_id = 1;
-  LocalizedString name = 2;
+  common.LocalizedString name = 2;
   string slug = 3;
   string icon_url = 4;
   bool is_active = 5;
@@ -108,7 +99,7 @@ message CreateCategoryRequest {
 message UpdateCategoryRequest {
   string id = 1;
   optional string parent_id = 2;
-  optional LocalizedString name = 3;
+  optional common.LocalizedString name = 3;
   optional string slug = 4;
   optional string icon_url = 5;
   optional bool is_active = 6;
@@ -144,7 +135,7 @@ message CreateCategoryAttributeRequest {
   string category_id = 1;
   string key = 2;
   string type = 3;  // text, number, dropdown, switch
-  LocalizedString label = 4;
+  common.LocalizedString label = 4;
   repeated AttributeOption options = 5;
   bool is_required = 6;
   int32 sort_order = 7;
@@ -154,7 +145,7 @@ message UpdateCategoryAttributeRequest {
   string id = 1;
   optional string key = 2;
   optional string type = 3;
-  optional LocalizedString label = 4;
+  optional common.LocalizedString label = 4;
   repeated AttributeOption options = 5;  // Replaces all options
   optional bool is_required = 6;
   optional int32 sort_order = 7;
@@ -163,9 +154,6 @@ message UpdateCategoryAttributeRequest {
 message DeleteCategoryAttributeRequest {
   string id = 1;
 }
-
-// Empty message
-message Empty {}
 
 // ============================================
 // CATEGORY SERVICE
@@ -178,12 +166,12 @@ service CategoryService {
   rpc GetCategory(GetCategoryRequest) returns (CategoryResponse);
   rpc CreateCategory(CreateCategoryRequest) returns (CategoryResponse);  // Admin only
   rpc UpdateCategory(UpdateCategoryRequest) returns (CategoryResponse);  // Admin only
-  rpc DeleteCategory(DeleteCategoryRequest) returns (Empty);  // Admin only
+  rpc DeleteCategory(DeleteCategoryRequest) returns (common.Empty);  // Admin only
 
   // Category Attributes
   rpc ListCategoryAttributes(ListCategoryAttributesRequest) returns (ListCategoryAttributesResponse);
   rpc GetCategoryAttribute(GetCategoryAttributeRequest) returns (CategoryAttributeResponse);
   rpc CreateCategoryAttribute(CreateCategoryAttributeRequest) returns (CategoryAttributeResponse);  // Admin only
   rpc UpdateCategoryAttribute(UpdateCategoryAttributeRequest) returns (CategoryAttributeResponse);  // Admin only
-  rpc DeleteCategoryAttribute(DeleteCategoryAttributeRequest) returns (Empty);  // Admin only
+  rpc DeleteCategoryAttribute(DeleteCategoryAttributeRequest) returns (common.Empty);  // Admin only
 }

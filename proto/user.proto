@@ -5,6 +5,7 @@ package user;
 option go_package = "mebellar-backend/pkg/pb;pb";
 
 import "google/protobuf/timestamp.proto";
+import "common.proto";
 
 // ============================================
 // USER MODEL
@@ -165,8 +166,6 @@ message AdminDeleteUserRequest {
   string id = 1;
 }
 
-// Empty message
-message Empty {}
 
 // ============================================
 // USER SERVICE
@@ -197,5 +196,5 @@ service UserService {
   rpc AdminListUsers(AdminListUsersRequest) returns (AdminListUsersResponse);
   rpc AdminGetUser(AdminGetUserRequest) returns (ProfileResponse);
   rpc AdminUpdateUser(AdminUpdateUserRequest) returns (ProfileResponse);
-  rpc AdminDeleteUser(AdminDeleteUserRequest) returns (Empty);
+  rpc AdminDeleteUser(AdminDeleteUserRequest) returns (common.Empty);
 }
