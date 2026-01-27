@@ -1,0 +1,201 @@
+syntax = "proto3";
+
+package user;
+
+option go_package = "mebellar-backend/pkg/pb;pb";
+
+import "google/protobuf/timestamp.proto";
+
+// ============================================
+// USER MODEL
+// ============================================
+
+message User {
+  string id = 1;
+  string full_name = 2;
+  string phone = 3;
+  string email = 4;
+  string avatar_url = 5;
+  string role = 6;  // customer, seller, admin, moderator
+  string onesignal_id = 7;
+  bool has_pin = 8;
+  bool is_active = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+}
+
+// ============================================
+// REQUEST/RESPONSE MESSAGES
+// ============================================
+
+message GetProfileRequest {
+  // Uses auth context
+}
+
+message ProfileResponse {
+  User user = 1;
+}
+
+message UpdateProfileRequest {
+  optional string full_name = 1;
+  optional string email = 2;
+  optional string avatar_url = 3;
+  optional string onesignal_id = 4;
+}
+
+message DeleteAccountRequest {
+  // Uses auth context
+}
+
+message DeleteAccountResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Phone change flow
+message RequestPhoneChangeRequest {
+  string new_phone = 1;
+}
+
+message RequestPhoneChangeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message VerifyPhoneChangeRequest {
+  string new_phone = 1;
+  string code = 2;
+}
+
+message VerifyPhoneChangeResponse {
+  bool success = 1;
+  string message = 2;
+  User user = 3;
+}
+
+// Email change flow
+message RequestEmailChangeRequest {
+  string new_email = 1;
+}
+
+message RequestEmailChangeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message VerifyEmailChangeRequest {
+  string new_email = 1;
+  string code = 2;
+}
+
+message VerifyEmailChangeResponse {
+  bool success = 1;
+  string message = 2;
+  User user = 3;
+}
+
+// PIN management
+message SetPinRequest {
+  string pin = 1;  // 4-6 digit PIN
+}
+
+message SetPinResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message VerifyPinRequest {
+  string pin = 1;
+}
+
+message VerifyPinResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// Avatar upload
+message UploadAvatarRequest {
+  oneof data {
+    AvatarMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message AvatarMetadata {
+  string filename = 1;
+  string content_type = 2;
+}
+
+message UploadAvatarResponse {
+  bool success = 1;
+  string avatar_url = 2;
+  string message = 3;
+}
+
+// ============================================
+// ADMIN USER MANAGEMENT
+// ============================================
+
+message AdminListUsersRequest {
+  string role = 1;  // Filter by role
+  bool active_only = 2;
+  string search = 3;  // Search in name/phone
+  int32 page = 4;
+  int32 limit = 5;
+}
+
+message AdminListUsersResponse {
+  repeated User users = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message AdminGetUserRequest {
+  string id = 1;
+}
+
+message AdminUpdateUserRequest {
+  string id = 1;
+  optional string role = 2;
+  optional bool is_active = 3;
+}
+
+message AdminDeleteUserRequest {
+  string id = 1;
+}
+
+// Empty message
+message Empty {}
+
+// ============================================
+// USER SERVICE
+// ============================================
+
+service UserService {
+  // Profile management (requires auth)
+  rpc GetProfile(GetProfileRequest) returns (ProfileResponse);
+  rpc UpdateProfile(UpdateProfileRequest) returns (ProfileResponse);
+  rpc DeleteAccount(DeleteAccountRequest) returns (DeleteAccountResponse);
+  
+  // Phone change
+  rpc RequestPhoneChange(RequestPhoneChangeRequest) returns (RequestPhoneChangeResponse);
+  rpc VerifyPhoneChange(VerifyPhoneChangeRequest) returns (VerifyPhoneChangeResponse);
+  
+  // Email change
+  rpc RequestEmailChange(RequestEmailChangeRequest) returns (RequestEmailChangeResponse);
+  rpc VerifyEmailChange(VerifyEmailChangeRequest) returns (VerifyEmailChangeResponse);
+  
+  // PIN management
+  rpc SetPin(SetPinRequest) returns (SetPinResponse);
+  rpc VerifyPin(VerifyPinRequest) returns (VerifyPinResponse);
+  
+  // Avatar upload via streaming
+  rpc UploadAvatar(stream UploadAvatarRequest) returns (UploadAvatarResponse);
+  
+  // Admin endpoints (requires admin/moderator role)
+  rpc AdminListUsers(AdminListUsersRequest) returns (AdminListUsersResponse);
+  rpc AdminGetUser(AdminGetUserRequest) returns (ProfileResponse);
+  rpc AdminUpdateUser(AdminUpdateUserRequest) returns (ProfileResponse);
+  rpc AdminDeleteUser(AdminDeleteUserRequest) returns (Empty);
+}

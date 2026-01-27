@@ -1,0 +1,270 @@
+syntax = "proto3";
+
+package product;
+
+option go_package = "mebellar-backend/pkg/pb;pb";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+// ============================================
+// SHARED TYPES
+// ============================================
+
+message LocalizedString {
+  string uz = 1;
+  string ru = 2;
+  string en = 3;
+}
+
+// ============================================
+// DELIVERY SETTINGS
+// ============================================
+
+message RegionalPriceGroup {
+  repeated string region_ids = 1;
+  double price = 2;
+  string name = 3;
+  string delivery_days = 4;
+}
+
+message DeliverySettings {
+  bool has_installation = 1;
+  double installation_price = 2;
+  double home_region_price = 3;
+  bool is_home_region_free = 4;
+  string home_delivery_days = 5;
+  repeated RegionalPriceGroup regional_prices = 6;
+}
+
+// ============================================
+// PRODUCT VARIANT
+// ============================================
+
+message ProductVariant {
+  string name = 1;
+  string value = 2;
+  double price_modifier = 3;  // Price adjustment for this variant
+  repeated string images = 4;
+  google.protobuf.Struct attributes = 5;  // Dynamic attributes
+}
+
+// ============================================
+// PRODUCT
+// ============================================
+
+message Product {
+  string id = 1;
+  string shop_id = 2;
+  string category_id = 3;
+  LocalizedString name = 4;
+  LocalizedString description = 5;
+  double price = 6;
+  double discount_price = 7;
+  repeated string images = 8;
+  google.protobuf.Struct specs = 9;  // Dynamic specifications
+  repeated ProductVariant variants = 10;
+  DeliverySettings delivery_settings = 11;
+  double rating = 12;
+  int32 view_count = 13;
+  int32 sold_count = 14;
+  bool is_new = 15;
+  bool is_popular = 16;
+  bool is_active = 17;
+  google.protobuf.Timestamp created_at = 18;
+  
+  // Computed fields
+  int32 discount_percent = 19;
+  bool has_discount = 20;
+  
+  // Optional: shop info for list views
+  string shop_name = 21;
+  string shop_logo = 22;
+}
+
+// ============================================
+// REQUEST/RESPONSE MESSAGES
+// ============================================
+
+// Filters for listing products
+message ProductFilters {
+  string category_id = 1;
+  string shop_id = 2;
+  bool is_new = 3;
+  bool is_popular = 4;
+  bool is_active = 5;
+  double min_price = 6;
+  double max_price = 7;
+  string search = 8;  // Search in name/description
+  string sort_by = 9;  // price_asc, price_desc, newest, popular
+}
+
+message ListProductsRequest {
+  ProductFilters filters = 1;
+  int32 page = 2;
+  int32 limit = 3;
+}
+
+message ListProductsResponse {
+  repeated Product products = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message GetProductRequest {
+  string id = 1;
+  bool increment_view = 2;  // Whether to increment view count
+}
+
+message ProductResponse {
+  Product product = 1;
+}
+
+message CreateProductRequest {
+  string shop_id = 1;
+  string category_id = 2;
+  LocalizedString name = 3;
+  LocalizedString description = 4;
+  double price = 5;
+  double discount_price = 6;
+  repeated string images = 7;
+  google.protobuf.Struct specs = 8;
+  repeated ProductVariant variants = 9;
+  DeliverySettings delivery_settings = 10;
+  bool is_new = 11;
+  bool is_popular = 12;
+  bool is_active = 13;
+}
+
+message UpdateProductRequest {
+  string id = 1;
+  optional string category_id = 2;
+  optional LocalizedString name = 3;
+  optional LocalizedString description = 4;
+  optional double price = 5;
+  optional double discount_price = 6;
+  repeated string images = 7;  // Replaces all images
+  google.protobuf.Struct specs = 8;  // Replaces all specs
+  repeated ProductVariant variants = 9;  // Replaces all variants
+  optional DeliverySettings delivery_settings = 10;
+  optional bool is_new = 11;
+  optional bool is_popular = 12;
+  optional bool is_active = 13;
+}
+
+message DeleteProductRequest {
+  string id = 1;
+}
+
+// Toggle product status (active/inactive)
+message ToggleProductStatusRequest {
+  string id = 1;
+  bool is_active = 2;
+}
+
+// ============================================
+// IMAGE UPLOAD (Streaming)
+// ============================================
+
+message UploadImageRequest {
+  oneof data {
+    ImageMetadata metadata = 1;
+    bytes chunk = 2;
+  }
+}
+
+message ImageMetadata {
+  string filename = 1;
+  string content_type = 2;  // image/jpeg, image/png, etc.
+  string product_id = 3;    // Optional: associate with product
+  string shop_id = 4;       // Required for authorization
+}
+
+message UploadImageResponse {
+  bool success = 1;
+  string image_url = 2;
+  string message = 3;
+}
+
+// Bulk upload response
+message BulkUploadImagesResponse {
+  bool success = 1;
+  repeated string image_urls = 2;
+  string message = 3;
+}
+
+// ============================================
+// NEW ARRIVALS & POPULAR (Special Queries)
+// ============================================
+
+message ListNewArrivalsRequest {
+  int32 limit = 1;
+  string category_id = 2;  // Optional filter
+}
+
+message ListPopularProductsRequest {
+  int32 limit = 1;
+  string category_id = 2;  // Optional filter
+}
+
+// ============================================
+// GROUPED BY SUBCATEGORY
+// ============================================
+
+message CategoryProductsGroup {
+  string category_id = 1;
+  LocalizedString category_name = 2;
+  string category_slug = 3;
+  repeated Product products = 4;
+  int32 total = 5;
+  bool has_more = 6;
+}
+
+message ListProductsGroupedBySubcategoryRequest {
+  string parent_category_id = 1;
+  int32 products_per_category = 2;
+}
+
+message ListProductsGroupedBySubcategoryResponse {
+  repeated CategoryProductsGroup groups = 1;
+  int32 count = 2;
+}
+
+// ============================================
+// SELLER PRODUCT MANAGEMENT
+// ============================================
+
+message ListSellerProductsRequest {
+  string shop_id = 1;  // From X-Shop-ID header or param
+  ProductFilters filters = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+// Empty message
+message Empty {}
+
+// ============================================
+// PRODUCT SERVICE
+// ============================================
+
+service ProductService {
+  // Public endpoints
+  rpc GetProduct(GetProductRequest) returns (ProductResponse);
+  rpc ListProducts(ListProductsRequest) returns (ListProductsResponse);
+  rpc ListNewArrivals(ListNewArrivalsRequest) returns (ListProductsResponse);
+  rpc ListPopularProducts(ListPopularProductsRequest) returns (ListProductsResponse);
+  rpc ListProductsGroupedBySubcategory(ListProductsGroupedBySubcategoryRequest) returns (ListProductsGroupedBySubcategoryResponse);
+
+  // Seller endpoints (requires auth + seller role)
+  rpc ListSellerProducts(ListSellerProductsRequest) returns (ListProductsResponse);
+  rpc CreateProduct(CreateProductRequest) returns (ProductResponse);
+  rpc UpdateProduct(UpdateProductRequest) returns (ProductResponse);
+  rpc DeleteProduct(DeleteProductRequest) returns (Empty);
+  rpc ToggleProductStatus(ToggleProductStatusRequest) returns (ProductResponse);
+
+  // Image upload via streaming
+  rpc UploadProductImage(stream UploadImageRequest) returns (UploadImageResponse);
+  rpc UploadProductImages(stream UploadImageRequest) returns (BulkUploadImagesResponse);  // Multiple images
+}
