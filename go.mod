@@ -13,6 +13,8 @@ require (
 	github.com/swaggo/swag v1.16.4
 	golang.org/x/crypto v0.28.0
 	google.golang.org/api v0.183.0
+	google.golang.org/grpc v1.66.0
+	google.golang.org/protobuf v1.34.1
 )
 
 require (

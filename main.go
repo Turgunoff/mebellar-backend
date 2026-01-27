@@ -4,10 +4,15 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"sync"
 
 	"mebellar-backend/handlers"
+	"mebellar-backend/internal/grpc/middleware"
+	"mebellar-backend/internal/grpc/server"
+	"mebellar-backend/pkg/pb"
 	"mebellar-backend/pkg/sms"
 	"mebellar-backend/pkg/websocket"
 
@@ -17,6 +22,8 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/rs/cors"
 	httpSwagger "github.com/swaggo/http-swagger"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/reflection"
 )
 
 // getEnv - environment variable olish (default bilan)
@@ -78,6 +85,7 @@ func main() {
 	dbPassword := getEnv("DB_PASSWORD", "")
 	dbName := getEnv("DB_NAME", "mebellar_olami")
 	serverPort := getEnv("SERVER_PORT", "8081")
+	grpcPort := getEnv("GRPC_PORT", "50051")
 	jwtSecret := getEnv("JWT_SECRET", "mebellar-super-secret-key-2024")
 
 	// Global sozlamalar
@@ -195,8 +203,41 @@ func main() {
 	// --- Debug/Seed ---
 	http.HandleFunc("/api/debug/seed-orders", handlers.JWTMiddleware(db, handlers.SeedOrders(db)))
 
-	// 6. CORS Sozlamalari va Serverni ishga tushirish
-	fmt.Println("🚀 Server ishga tushmoqda...")
+	// 6. gRPC Server setup
+	fmt.Println("🔧 gRPC server sozlanmoqda...")
+	
+	// Methods that don't require authentication
+	skipAuthMethods := map[string]bool{
+		"/auth.AuthService/SendOTP":     true,
+		"/auth.AuthService/Login":       true,
+		"/auth.AuthService/Register":    true,
+		"/auth.AuthService/VerifyOTP":   true,
+		"/auth.AuthService/RefreshToken": true,
+	}
+	
+	unaryInterceptor, streamInterceptor := middleware.NewAuthInterceptors(
+		[]byte(jwtSecret),
+		db,
+		skipAuthMethods,
+	)
+	
+	grpcServer := grpc.NewServer(
+		grpc.UnaryInterceptor(unaryInterceptor),
+		grpc.StreamInterceptor(streamInterceptor),
+	)
+	
+	// Register gRPC services
+	authService := server.NewAuthServiceServer(db, []byte(jwtSecret))
+	pb.RegisterAuthServiceServer(grpcServer, authService)
+	
+	orderService := server.NewOrderServiceServer(db)
+	pb.RegisterOrderServiceServer(grpcServer, orderService)
+	
+	// Enable reflection for gRPC CLI tools (grpcurl, etc.)
+	reflection.Register(grpcServer)
+	
+	// 7. CORS Sozlamalari va HTTP Serverni ishga tushirish
+	fmt.Println("🚀 Serverlar ishga tushmoqda...")
 
 	// rs/cors kutubxonasi barcha CORS logikasini boshqaradi
 	c := cors.New(cors.Options{
@@ -215,8 +256,33 @@ func main() {
 	// Barcha marshrutlarni CORS handler bilan o'rash
 	handler := c.Handler(http.DefaultServeMux)
 
-	fmt.Printf("✅ Server %s-portda tayyor!\n", serverPort)
-	log.Fatal(http.ListenAndServe(":"+serverPort, handler))
+	// Start both servers concurrently
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	// Start HTTP server
+	go func() {
+		defer wg.Done()
+		fmt.Printf("✅ HTTP Server %s-portda tayyor!\n", serverPort)
+		if err := http.ListenAndServe(":"+serverPort, handler); err != nil {
+			log.Fatalf("❌ HTTP server xatosi: %v", err)
+		}
+	}()
+
+	// Start gRPC server
+	go func() {
+		defer wg.Done()
+		lis, err := net.Listen("tcp", ":"+grpcPort)
+		if err != nil {
+			log.Fatalf("❌ gRPC listener xatosi: %v", err)
+		}
+		fmt.Printf("✅ gRPC Server %s-portda tayyor!\n", grpcPort)
+		if err := grpcServer.Serve(lis); err != nil {
+			log.Fatalf("❌ gRPC server xatosi: %v", err)
+		}
+	}()
+
+	wg.Wait()
 }
 
 // ---------------------------------------------------------
