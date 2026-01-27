@@ -9,19 +9,13 @@ import (
 	"os"
 	"sync"
 
-	"mebellar-backend/handlers"
 	"mebellar-backend/internal/grpc/middleware"
 	"mebellar-backend/internal/grpc/server"
 	"mebellar-backend/pkg/pb"
 	"mebellar-backend/pkg/sms"
-	"mebellar-backend/pkg/websocket"
-
-	_ "mebellar-backend/docs" // Swagger docs
 
 	"github.com/joho/godotenv"
-	_ "github.com/lib/pq"
-	"github.com/rs/cors"
-	httpSwagger "github.com/swaggo/http-swagger"
+	"github.com/lib/pq"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
 )
@@ -32,43 +26,6 @@ func getEnv(key, defaultValue string) string {
 		return value
 	}
 	return defaultValue
-}
-
-// @title           Mebellar Olami API
-// @version         1.0
-// @description     Bu Flutter ilovasi uchun Backend API serveri. Mebel sotish platformasi.
-// @termsOfService  http://swagger.io/terms/
-
-// @contact.name   API Support
-// @contact.email  support@mebellar.uz
-
-// @license.name  Apache 2.0
-// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
-
-// @host      api.mebellar-olami.uz
-// @BasePath  /api
-
-// @securityDefinitions.apikey BearerAuth
-// @in header
-// @name Authorization
-// @description JWT token kiritish: "Bearer {token}"
-
-// userMeHandler - /api/user/me uchun method router
-func userMeHandler(db *sql.DB) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		switch r.Method {
-		case http.MethodGet:
-			handlers.GetProfile(db)(w, r)
-		case http.MethodPut:
-			handlers.UpdateProfile(db)(w, r)
-		case http.MethodDelete:
-			handlers.DeleteAccount(db)(w, r)
-		default:
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			w.Write([]byte(`{"success":false,"message":"Bu metod qo'llab-quvvatlanmaydi"}`))
-		}
-	}
 }
 
 func main() {
@@ -84,13 +41,9 @@ func main() {
 	dbUser := getEnv("DB_USER", "mebel_user")
 	dbPassword := getEnv("DB_PASSWORD", "")
 	dbName := getEnv("DB_NAME", "mebellar_olami")
-	serverPort := getEnv("SERVER_PORT", "8081")
+	staticPort := getEnv("STATIC_PORT", "8081")
 	grpcPort := getEnv("GRPC_PORT", "50051")
 	jwtSecret := getEnv("JWT_SECRET", "mebellar-super-secret-key-2024")
-
-	// Global sozlamalar
-	handlers.SetJWTSecret(jwtSecret)
-	websocket.SetJWTSecret(jwtSecret)
 
 	// 2. Bazaga ulanish
 	psqlInfo := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
@@ -110,162 +63,109 @@ func main() {
 	// 3. Jadvallarni tekshirish va yaratish
 	createUsersTable(db)
 
-	// 4. Xizmatlarni ishga tushirish
+	// 4. SMS xizmatini ishga tushirish
 	initSMSService()
-	websocket.InitGlobalHub()
 
-	// 5. Marshrutlarni ro'yxatdan o'tkazish (http.HandleFunc)
-	// Izoh: corsMiddleware olib tashlandi, chunki quyida rs/cors ishlatilmoqda.
-
-	// --- Public Endpoints ---
-	http.HandleFunc("/api/categories", handlers.GetCategories(db))
-	http.HandleFunc("/api/categories/", handlers.CategoryAttributesRouter(db)) // Handles both /categories/{id} and /categories/{id}/attributes
-	http.HandleFunc("/api/regions", handlers.GetRegions(db))
-	http.HandleFunc("/api/products", handlers.GetProducts(db))
-	http.HandleFunc("/api/products/new", handlers.GetNewArrivals(db))
-	http.HandleFunc("/api/products/popular", handlers.GetPopularProducts(db))
-	http.HandleFunc("/api/products/grouped-by-subcategory", handlers.GetProductsGroupedBySubcategory(db))
-	http.HandleFunc("/api/products/", handlers.GetProductByID(db))
-	http.HandleFunc("/api/shops/", handlers.GetPublicShopBySlug(db))
-	http.HandleFunc("/api/common/cancellation-reasons", handlers.GetCancellationReasons(db))
-	http.HandleFunc("/api/banners", handlers.GetBanners(db))
-
-	// --- Auth Endpoints ---
-	http.HandleFunc("/api/auth/send-otp", handlers.SendOTP(db))
-	http.HandleFunc("/api/auth/verify-otp", handlers.VerifyOTP(db))
-	http.HandleFunc("/api/auth/register", handlers.Register(db))
-	http.HandleFunc("/api/auth/login", handlers.Login(db))
-	http.HandleFunc("/api/auth/forgot-password", handlers.ForgotPassword(db))
-	http.HandleFunc("/api/auth/reset-password", handlers.ResetPassword(db))
-	
-	// --- Session Management (Protected) ---
-	http.HandleFunc("/api/auth/sessions", handlers.JWTMiddleware(db, handlers.SessionsHandler(db)))
-	http.HandleFunc("/api/auth/sessions/", handlers.JWTMiddleware(db, handlers.RevokeSessionHandler(db)))
-	http.HandleFunc("/api/auth/set-pin", handlers.JWTMiddleware(db, handlers.SetPinHandler(db)))
-
-	// --- User (Protected) Endpoints ---
-	http.HandleFunc("/api/user/me", handlers.JWTMiddleware(db, userMeHandler(db)))
-	http.HandleFunc("/api/user/change-phone/request", handlers.JWTMiddleware(db, handlers.RequestPhoneChange(db)))
-	http.HandleFunc("/api/user/change-phone/verify", handlers.JWTMiddleware(db, handlers.VerifyPhoneChange(db)))
-	http.HandleFunc("/api/user/change-email/request", handlers.JWTMiddleware(db, handlers.RequestEmailChange(db)))
-	http.HandleFunc("/api/user/change-email/verify", handlers.JWTMiddleware(db, handlers.VerifyEmailChange(db)))
-	http.HandleFunc("/api/user/become-seller", handlers.JWTMiddleware(db, handlers.BecomeSeller(db)))
-	http.HandleFunc("/api/orders", handlers.CustomerOrdersHandler(db)) // Mijoz buyurtmalari
-
-	// --- Seller (Protected) Endpoints ---
-	http.HandleFunc("/api/seller/upgrade", handlers.JWTMiddleware(db, handlers.UpgradeToSeller(db))) // Customer -> Seller upgrade
-	http.HandleFunc("/api/seller/shops", handlers.JWTMiddleware(db, handlers.ShopsHandler(db)))
-	http.HandleFunc("/api/seller/shops/", handlers.JWTMiddleware(db, handlers.ShopByIDHandler(db)))
-	http.HandleFunc("/api/seller/products", handlers.JWTMiddleware(db, handlers.SellerProductsHandler(db)))
-	http.HandleFunc("/api/seller/products/", handlers.JWTMiddleware(db, handlers.SellerProductItemHandler(db)))
-	http.HandleFunc("/api/seller/orders", handlers.JWTMiddleware(db, handlers.SellerOrdersHandler(db)))
-	http.HandleFunc("/api/seller/orders/stats", handlers.JWTMiddleware(db, handlers.GetOrderStats(db)))
-	http.HandleFunc("/api/seller/orders/", handlers.JWTMiddleware(db, handlers.UpdateOrderStatus(db)))
-	http.HandleFunc("/api/seller/profile", handlers.JWTMiddleware(db, handlers.SellerProfileHandler(db)))
-	http.HandleFunc("/api/seller/account", handlers.JWTMiddleware(db, handlers.DeleteSellerAccount(db)))
-	http.HandleFunc("/api/seller/dashboard/stats", handlers.JWTMiddleware(db, handlers.GetDashboardStats(db)))
-	http.HandleFunc("/api/seller/analytics/cancellations", handlers.JWTMiddleware(db, handlers.GetCancellationStats(db)))
-
-	// --- Admin (Protected: Admin/Moderator Only) ---
-	http.HandleFunc("/api/admin/dashboard-stats", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminDashboardStats(db)))
-	http.HandleFunc("/api/admin/users", handlers.RequireRole(db, "admin", "moderator")(handlers.GetUsers(db)))
-	http.HandleFunc("/api/admin/categories/list", handlers.RequireRole(db, "admin", "moderator")(handlers.GetAdminCategories(db)))
-	http.HandleFunc("/api/admin/categories", handlers.RequireRole(db, "admin", "moderator")(handlers.CreateCategory(db)))
-	http.HandleFunc("/api/admin/categories/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryAttributesRouter(db))) // Handles categories/{id}, categories/{id}/attributes
-	http.HandleFunc("/api/admin/category-attributes/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminCategoryAttributeHandler(db))) // PUT/DELETE for attributes
-	
-	// --- Admin Sellers Management ---
-	http.HandleFunc("/api/admin/sellers", handlers.RequireRole(db, "admin", "moderator")(handlers.GetSellers(db)))
-	http.HandleFunc("/api/admin/sellers/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminSellerHandler(db)))
-	
-	// --- Admin Shops Management ---
-	http.HandleFunc("/api/admin/shops", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminShopsHandler(db)))
-	http.HandleFunc("/api/admin/shops/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminShopItemHandler(db)))
-	
-	// --- Admin Orders Management ---
-	http.HandleFunc("/api/admin/orders", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminOrdersHandler(db)))
-	http.HandleFunc("/api/admin/orders/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminOrdersHandler(db)))
-	
-	// --- Admin Regions Management ---
-	http.HandleFunc("/api/admin/regions", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminRegionsHandler(db)))
-	http.HandleFunc("/api/admin/regions/", handlers.RequireRole(db, "admin", "moderator")(handlers.AdminRegionItemHandler(db)))
-
-	// --- WebSocket ---
-	http.HandleFunc("/ws/orders", websocket.HandleWebSocket(db))
-
-	// --- Static Files ---
-	fs := http.FileServer(http.Dir("uploads"))
-	http.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
-
-	// --- Swagger ---
-	http.HandleFunc("/swagger/", httpSwagger.WrapHandler)
-
-	// --- Debug/Seed ---
-	http.HandleFunc("/api/debug/seed-orders", handlers.JWTMiddleware(db, handlers.SeedOrders(db)))
-
-	// 6. gRPC Server setup
+	// 5. gRPC Server setup
 	fmt.Println("🔧 gRPC server sozlanmoqda...")
-	
+
 	// Methods that don't require authentication
 	skipAuthMethods := map[string]bool{
-		"/auth.AuthService/SendOTP":     true,
-		"/auth.AuthService/Login":       true,
-		"/auth.AuthService/Register":    true,
-		"/auth.AuthService/VerifyOTP":   true,
+		// Auth service - public
+		"/auth.AuthService/SendOTP":      true,
+		"/auth.AuthService/Login":        true,
+		"/auth.AuthService/Register":     true,
+		"/auth.AuthService/VerifyOTP":    true,
 		"/auth.AuthService/RefreshToken": true,
+
+		// Product service - public read endpoints
+		"/product.ProductService/GetProduct":                       true,
+		"/product.ProductService/ListProducts":                     true,
+		"/product.ProductService/ListNewArrivals":                  true,
+		"/product.ProductService/ListPopularProducts":              true,
+		"/product.ProductService/ListProductsGroupedBySubcategory": true,
+
+		// Category service - public read endpoints
+		"/category.CategoryService/ListCategories":         true,
+		"/category.CategoryService/ListFlatCategories":     true,
+		"/category.CategoryService/GetCategory":            true,
+		"/category.CategoryService/ListCategoryAttributes": true,
+		"/category.CategoryService/GetCategoryAttribute":   true,
+
+		// Shop service - public endpoints
+		"/shop.ShopService/GetShopBySlug":          true,
+		"/shop.ShopService/GetPublicSellerProfile": true,
+
+		// Common service - public endpoints
+		"/common.CommonService/ListRegions":             true,
+		"/common.CommonService/GetRegion":               true,
+		"/common.CommonService/ListBanners":             true,
+		"/common.CommonService/GetBanner":               true,
+		"/common.CommonService/ListCancellationReasons": true,
+
+		// Order service - create order is public (guest checkout)
+		"/order.OrderService/CreateOrder": true,
 	}
-	
+
 	unaryInterceptor, streamInterceptor := middleware.NewAuthInterceptors(
 		[]byte(jwtSecret),
 		db,
 		skipAuthMethods,
 	)
-	
+
 	grpcServer := grpc.NewServer(
 		grpc.UnaryInterceptor(unaryInterceptor),
 		grpc.StreamInterceptor(streamInterceptor),
 	)
-	
-	// Register gRPC services
+
+	// Register all gRPC services
 	authService := server.NewAuthServiceServer(db, []byte(jwtSecret))
 	pb.RegisterAuthServiceServer(grpcServer, authService)
-	
+
 	orderService := server.NewOrderServiceServer(db)
 	pb.RegisterOrderServiceServer(grpcServer, orderService)
-	
-	// Enable reflection for gRPC CLI tools (grpcurl, etc.)
+
+	productService := server.NewProductServiceServer(db)
+	pb.RegisterProductServiceServer(grpcServer, productService)
+
+	categoryService := server.NewCategoryServiceServer(db)
+	pb.RegisterCategoryServiceServer(grpcServer, categoryService)
+
+	shopService := server.NewShopServiceServer(db)
+	pb.RegisterShopServiceServer(grpcServer, shopService)
+
+	commonService := server.NewCommonServiceServer(db)
+	pb.RegisterCommonServiceServer(grpcServer, commonService)
+
+	// Enable reflection for gRPC CLI tools (grpcurl, grpcui, etc.)
 	reflection.Register(grpcServer)
-	
-	// 7. CORS Sozlamalari va HTTP Serverni ishga tushirish
+
+	// 6. Start servers
 	fmt.Println("🚀 Serverlar ishga tushmoqda...")
 
-	// rs/cors kutubxonasi barcha CORS logikasini boshqaradi
-	c := cors.New(cors.Options{
-		AllowedOrigins: []string{
-			"http://localhost:5173",           // Local Admin/Frontend
-			"https://admin.mebellar-olami.uz", // Production Admin
-			"https://mebellar-olami.uz",       // Production Landing
-			"https://api.mebellar-olami.uz",   // API o'zi
-		},
-		AllowedMethods:   []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Authorization", "Content-Type", "Accept", "X-Requested-With", "X-Shop-ID", "X-Device-ID", "x-device-id", "X-App-Type", "x-app-type"}, // Device headers qo'shildi
-		AllowCredentials: true,
-		Debug:            true, // Ishlab chiqish jarayonida yoqib turish foydali
-	})
-
-	// Barcha marshrutlarni CORS handler bilan o'rash
-	handler := c.Handler(http.DefaultServeMux)
-
-	// Start both servers concurrently
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	// Start HTTP server
+	// Start Static File Server (for serving uploaded images)
 	go func() {
 		defer wg.Done()
-		fmt.Printf("✅ HTTP Server %s-portda tayyor!\n", serverPort)
-		if err := http.ListenAndServe(":"+serverPort, handler); err != nil {
-			log.Fatalf("❌ HTTP server xatosi: %v", err)
+
+		mux := http.NewServeMux()
+
+		// Static files for uploads
+		fs := http.FileServer(http.Dir("uploads"))
+		mux.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
+
+		// Health check endpoint
+		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"ok","service":"mebellar-backend"}`))
+		})
+
+		fmt.Printf("✅ Static File Server %s-portda tayyor! (uploads servisi)\n", staticPort)
+		if err := http.ListenAndServe(":"+staticPort, mux); err != nil {
+			log.Fatalf("❌ Static server xatosi: %v", err)
 		}
 	}()
 
@@ -277,6 +177,7 @@ func main() {
 			log.Fatalf("❌ gRPC listener xatosi: %v", err)
 		}
 		fmt.Printf("✅ gRPC Server %s-portda tayyor!\n", grpcPort)
+		fmt.Println("📡 Registered services: AuthService, OrderService, ProductService, CategoryService, ShopService, CommonService")
 		if err := grpcServer.Serve(lis); err != nil {
 			log.Fatalf("❌ gRPC server xatosi: %v", err)
 		}
@@ -323,7 +224,7 @@ func createSellerProfilesTable(db *sql.DB) {
 	query := `
 	CREATE TABLE IF NOT EXISTS seller_profiles (
 		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, -- user_id INTEGER bo'lishi kerak (serial), UUID emas
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 		shop_name VARCHAR(255) NOT NULL,
 		slug VARCHAR(255) UNIQUE,
 		description TEXT,
@@ -334,7 +235,7 @@ func createSellerProfilesTable(db *sql.DB) {
 		bank_account VARCHAR(50),
 		bank_name VARCHAR(255),
 		support_phone VARCHAR(20),
-		address VARCHAR(500),
+		address JSONB DEFAULT '{}',
 		latitude FLOAT8,
 		longitude FLOAT8,
 		social_links JSONB DEFAULT '{}',
@@ -345,11 +246,6 @@ func createSellerProfilesTable(db *sql.DB) {
 		updated_at TIMESTAMP DEFAULT NOW()
 	);
 	`
-	// Eslatma: user_id turi 'users' jadvalidagi 'id' turi bilan mos bo'lishi kerak.
-	// Agar users.id SERIAL (int) bo'lsa, bu yerda user_id INTEGER bo'lishi kerak.
-	// Agar users.id UUID bo'lsa, bu yerda ham UUID bo'lishi kerak.
-	// Yuqoridagi kodda users.id SERIAL deb olingan.
-
 	_, err := db.Exec(query)
 	if err != nil {
 		log.Printf("Seller profiles jadvalini yaratishda xatolik: %v", err)
@@ -397,6 +293,5 @@ func initSMSService() {
 			log.Printf("⚠️ Eskiz login xatosi: %v", err)
 		}
 	}()
-	handlers.SetSMSService(eskizService)
 	fmt.Println("✅ Eskiz SMS xizmati ulandi!")
 }
