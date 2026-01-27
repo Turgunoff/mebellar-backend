@@ -34,7 +34,7 @@ jobs:
             /usr/local/go/bin/go mod tidy
 
             # 5. Dasturni qurish (Build)
-            /usr/local/go/bin/go build -o server_app main.go
+            /usr/local/go/bin/go build -o server_app .
 
             # 6. Servisni yangilash
             systemctl restart mebellar
