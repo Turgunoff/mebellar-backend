@@ -189,10 +189,7 @@ func (s *ShopServiceServer) CreateShop(ctx context.Context, req *pb.CreateShopRe
 	}
 	slug = fmt.Sprintf("%s-%s", slug, shopID[:8])
 
-	isActive := true
-	if req.IsActive != nil {
-		isActive = *req.IsActive
-	}
+	isActive := req.GetIsActive()
 
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO shops (id, seller_id, name, description, address, slug, phone, region_id,
