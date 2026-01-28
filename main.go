@@ -114,18 +114,15 @@ func main() {
 	)
 
 	// Chain interceptors: Logger first, then Auth
-	unaryInterceptor := grpc.ChainUnaryInterceptor(
-		middleware.UnaryLogger,
-		unaryAuthInterceptor,
-	)
-	streamInterceptor := grpc.ChainStreamInterceptor(
-		middleware.StreamLogger,
-		streamAuthInterceptor,
-	)
-
 	grpcServer := grpc.NewServer(
-		grpc.UnaryInterceptor(unaryInterceptor),
-		grpc.StreamInterceptor(streamInterceptor),
+		grpc.ChainUnaryInterceptor(
+			middleware.UnaryLogger,
+			unaryAuthInterceptor,
+		),
+		grpc.ChainStreamInterceptor(
+			middleware.StreamLogger,
+			streamAuthInterceptor,
+		),
 	)
 
 	// Register all gRPC services

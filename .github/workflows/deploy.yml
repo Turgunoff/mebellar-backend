@@ -23,21 +23,24 @@ jobs:
             # 1. Loyiha papkasiga kirish
             cd ~/mebellar-backend
 
-            # 2. Xavfsizlik: Serverdagi har qanday "chala" o'zgarishni tozalash
-            # (Bu git conflict muammosini oldini oladi)
+            # 2. Serverdagi o'zgarishlarni bekor qilish (Clean state)
             git reset --hard origin/main
+            git clean -fd  # Gitda yo'q ortiqcha fayllarni o'chirish
 
-            # 3. Eng yangi kodni olish
+            # 3. Eng yangi kodni olish (Bunda pkg/pb ichidagi yangi fayllar ham keladi)
             git pull origin main
 
-            # 4. Kodingiz ishlashi uchun kerakli kutubxonalarni aniqlash
+            # 4. Dependency'larni yangilash
             /usr/local/go/bin/go mod tidy
 
-            # 5. Dasturni qurish (Build)
+            # 5. Eski binary faylni o'chirish (Muhim!)
+            rm -f server_app
+
+            # 6. Yangi dasturni qurish
             /usr/local/go/bin/go build -o server_app .
 
-            # 6. Servisni yangilash
+            # 7. Servisni yangilash
             systemctl restart mebellar
 
-            # 7. Statusni tekshirish
+            # 8. Statusni tekshirish
             systemctl status mebellar --no-pager

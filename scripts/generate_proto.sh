@@ -8,9 +8,10 @@ set -e
 PROTO_DIR="./proto"
 OUT_DIR="./pkg/pb"
 
+# Create output directory if it doesn't exist
+mkdir -p "$OUT_DIR"
+
 # Generate code for all proto files at once
-# This is necessary because they all share the same Go package (pb)
-# and running them separately would cause duplicate message declarations.
 echo "📦 Processing all proto files..."
 protoc \
     --go_out="$OUT_DIR" \

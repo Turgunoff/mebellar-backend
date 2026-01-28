@@ -19,8 +19,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 type UserServiceServer struct {
@@ -581,7 +579,7 @@ func (s *UserServiceServer) AdminUpdateUser(ctx context.Context, req *pb.AdminUp
 	}, nil
 }
 
-func (s *UserServiceServer) AdminDeleteUser(ctx context.Context, req *pb.AdminDeleteUserRequest) (*emptypb.Empty, error) {
+func (s *UserServiceServer) AdminDeleteUser(ctx context.Context, req *pb.AdminDeleteUserRequest) (*pb.Empty, error) {
 	authCtx := middleware.GetAuthContext(ctx)
 	if authCtx == nil || authCtx.Role != "admin" {
 		return nil, status.Error(codes.PermissionDenied, "admin role required")
@@ -593,7 +591,7 @@ func (s *UserServiceServer) AdminDeleteUser(ctx context.Context, req *pb.AdminDe
 		return nil, status.Errorf(codes.Internal, "delete error: %v", err)
 	}
 
-	return &emptypb.Empty{}, nil
+	return &pb.Empty{}, nil
 }
 
 // ============================================
