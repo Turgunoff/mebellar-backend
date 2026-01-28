@@ -17,6 +17,7 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -113,8 +114,24 @@ func main() {
 		skipAuthMethods,
 	)
 
+	// Keepalive settings to prevent stream disconnection
+	kasp := keepalive.ServerParameters{
+		MaxConnectionIdle:     15 * time.Second, // If a client is idle for 15 seconds, send a GOAWAY
+		MaxConnectionAge:      0,                 // Infinite
+		MaxConnectionAgeGrace: 5 * time.Second,  // Allow 5s for pending RPCs to finish
+		Time:                  20 * time.Second, // Ping the client every 20 seconds to keep the connection alive
+		Timeout:               5 * time.Second,  // Wait 5 seconds for the ping response
+	}
+
+	kaep := keepalive.EnforcementPolicy{
+		MinTime:             5 * time.Second, // Minimum time between client pings
+		PermitWithoutStream: true,            // Allow pings even when there are no active streams
+	}
+
 	// Chain interceptors: Logger first, then Auth
 	grpcServer := grpc.NewServer(
+		grpc.KeepaliveParams(kasp),
+		grpc.KeepaliveEnforcementPolicy(kaep),
 		grpc.ChainUnaryInterceptor(
 			middleware.UnaryLogger,
 			unaryAuthInterceptor,
