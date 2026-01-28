@@ -171,9 +171,37 @@ func (s *ShopServiceServer) CreateShop(ctx context.Context, req *pb.CreateShopRe
 	var sellerID string
 	err := s.db.QueryRowContext(ctx, "SELECT id FROM seller_profiles WHERE user_id = $1", auth.UserID).Scan(&sellerID)
 	if err == sql.ErrNoRows {
-		return nil, status.Error(codes.FailedPrecondition, "seller profile not found")
-	}
-	if err != nil {
+		// Auto-create seller profile
+		sellerID = uuid.NewString()
+		shopName := req.GetName().GetUz()
+		if shopName == "" {
+			shopName = req.GetName().GetEn()
+		}
+		if shopName == "" {
+			shopName = "My Shop"
+		}
+
+		slug := generateSlug(shopName)
+		if slug == "" {
+			slug = fmt.Sprintf("shop-%s", sellerID[:8])
+		} else {
+			slug = fmt.Sprintf("%s-%s", slug, sellerID[:8])
+		}
+
+		_, err = s.db.ExecContext(ctx, `
+			INSERT INTO seller_profiles (id, user_id, shop_name, slug, is_verified, rating, created_at, updated_at)
+			VALUES ($1, $2, $3, $4, false, 0, NOW(), NOW())
+		`, sellerID, auth.UserID, shopName, slug)
+
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "failed to auto-create seller profile: %v", err)
+		}
+
+		// Update user role to seller if not already admin
+		if auth.Role != "admin" {
+			s.db.ExecContext(ctx, "UPDATE users SET role = 'seller' WHERE id = $1", auth.UserID)
+		}
+	} else if err != nil {
 		return nil, status.Errorf(codes.Internal, "query error: %v", err)
 	}
 
