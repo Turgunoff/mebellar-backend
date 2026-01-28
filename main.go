@@ -66,7 +66,7 @@ func main() {
 	createUsersTable(db)
 
 	// 4. SMS xizmatini ishga tushirish
-	initSMSService()
+	smsService := initSMSService()
 
 	// 5. gRPC Server setup
 	fmt.Println("🔧 gRPC server sozlanmoqda...")
@@ -144,7 +144,7 @@ func main() {
 	)
 
 	// Register all gRPC services
-	authService := server.NewAuthServiceServer(db, []byte(jwtSecret))
+	authService := server.NewAuthServiceServer(db, []byte(jwtSecret), smsService)
 	pb.RegisterAuthServiceServer(grpcServer, authService)
 
 	userService := server.NewUserServiceServer(db)
@@ -307,13 +307,13 @@ func addColumnIfNotExists(db *sql.DB, table, column, dataType string) {
 	}
 }
 
-func initSMSService() {
+func initSMSService() sms.SMSService {
 	eskizEmail := os.Getenv("ESKIZ_EMAIL")
 	eskizPassword := os.Getenv("ESKIZ_PASSWORD")
 
 	if eskizEmail == "" || eskizPassword == "" {
 		fmt.Println("⚠️  ESKIZ_EMAIL yoki ESKIZ_PASSWORD o'rnatilmagan")
-		return
+		return nil
 	}
 	eskizService := sms.NewEskizService(eskizEmail, eskizPassword)
 	go func() {
@@ -322,4 +322,5 @@ func initSMSService() {
 		}
 	}()
 	fmt.Println("✅ Eskiz SMS xizmati ulandi!")
+	return eskizService
 }

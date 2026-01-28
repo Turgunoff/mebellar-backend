@@ -249,9 +249,15 @@ func (e *EskizService) sendSMSWithToken(phone, message, token string) error {
 	return nil
 }
 
+// SMSService - SMS xizmatlari uchun interfeys
+type SMSService interface {
+	SendSMS(phone, message string) error
+	SendOTP(phone, code string) error
+}
+
 // SendOTP - OTP kod yuborish (formatlangan xabar bilan)
 func (e *EskizService) SendOTP(phone, code string) error {
-	message := fmt.Sprintf("Verification code to log in to the Edumate platform: %s. n8SDK1tHd", code)
+	message := fmt.Sprintf("Mebellar Olami tizimiga kirish kodi: %s", code)
 	return e.SendSMS(phone, message)
 }
 
