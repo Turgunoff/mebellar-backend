@@ -36,7 +36,7 @@ func (s *CommonServiceServer) ListRegions(ctx context.Context, req *pb.ListRegio
 	}
 
 	query := fmt.Sprintf(`
-		SELECT id, name, COALESCE(name_jsonb, '{}'), code, is_active, ordering, created_at, updated_at
+		SELECT id, name, code, is_active, ordering, created_at, updated_at
 		FROM regions WHERE %s ORDER BY ordering, id
 	`, where)
 
@@ -49,23 +49,27 @@ func (s *CommonServiceServer) ListRegions(ctx context.Context, req *pb.ListRegio
 	var regions []*pb.Region
 	for rows.Next() {
 		var id int32
-		var name string
 		var nameJSONB []byte
 		var code sql.NullString
 		var isActive bool
 		var ordering int32
 		var createdAt, updatedAt sql.NullTime
 
-		if err := rows.Scan(&id, &name, &nameJSONB, &code, &isActive, &ordering, &createdAt, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &nameJSONB, &code, &isActive, &ordering, &createdAt, &updatedAt); err != nil {
 			continue
 		}
 
 		nameMap := make(map[string]string)
 		json.Unmarshal(nameJSONB, &nameMap)
 
+		legacyName := nameMap["uz"]
+		if legacyName == "" {
+			legacyName = nameMap["en"]
+		}
+
 		region := &pb.Region{
 			Id:             id,
-			Name:           name,
+			Name:           legacyName,
 			NameLocalized:  mapToLocalizedString(nameMap),
 			IsActive:       isActive,
 			Ordering:       ordering,
@@ -95,7 +99,6 @@ func (s *CommonServiceServer) GetRegion(ctx context.Context, req *pb.GetRegionRe
 	}
 
 	var id int32
-	var name string
 	var nameJSONB []byte
 	var code sql.NullString
 	var isActive bool
@@ -103,9 +106,9 @@ func (s *CommonServiceServer) GetRegion(ctx context.Context, req *pb.GetRegionRe
 	var createdAt, updatedAt sql.NullTime
 
 	err := s.db.QueryRowContext(ctx, `
-		SELECT id, name, COALESCE(name_jsonb, '{}'), code, is_active, ordering, created_at, updated_at
+		SELECT id, name, code, is_active, ordering, created_at, updated_at
 		FROM regions WHERE id = $1
-	`, req.GetId()).Scan(&id, &name, &nameJSONB, &code, &isActive, &ordering, &createdAt, &updatedAt)
+	`, req.GetId()).Scan(&id, &nameJSONB, &code, &isActive, &ordering, &createdAt, &updatedAt)
 
 	if err == sql.ErrNoRows {
 		return nil, status.Error(codes.NotFound, "region not found")
@@ -117,9 +120,14 @@ func (s *CommonServiceServer) GetRegion(ctx context.Context, req *pb.GetRegionRe
 	nameMap := make(map[string]string)
 	json.Unmarshal(nameJSONB, &nameMap)
 
+	legacyName := nameMap["uz"]
+	if legacyName == "" {
+		legacyName = nameMap["en"]
+	}
+
 	region := &pb.Region{
 		Id:            id,
-		Name:          name,
+		Name:          legacyName,
 		NameLocalized: mapToLocalizedString(nameMap),
 		IsActive:      isActive,
 		Ordering:      ordering,
@@ -151,10 +159,10 @@ func (s *CommonServiceServer) CreateRegion(ctx context.Context, req *pb.CreateRe
 
 	var id int32
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO regions (name, name_jsonb, code, is_active, ordering, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, NOW(), NOW())
+		INSERT INTO regions (name, code, is_active, ordering, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, NOW(), NOW())
 		RETURNING id
-	`, legacyName, nameJSON, req.GetCode(), req.GetIsActive(), req.GetOrdering()).Scan(&id)
+	`, nameJSON, req.GetCode(), req.GetIsActive(), req.GetOrdering()).Scan(&id)
 
 	if err != nil {
 		if strings.Contains(err.Error(), "duplicate") {
@@ -182,16 +190,8 @@ func (s *CommonServiceServer) UpdateRegion(ctx context.Context, req *pb.UpdateRe
 
 	if req.Name != nil {
 		nameJSON, _ := json.Marshal(localizedStringToMap(req.Name))
-		updates = append(updates, fmt.Sprintf("name_jsonb = $%d", argIdx))
-		args = append(args, nameJSON)
-		argIdx++
-
-		legacyName := req.Name.GetUz()
-		if legacyName == "" {
-			legacyName = req.Name.GetEn()
-		}
 		updates = append(updates, fmt.Sprintf("name = $%d", argIdx))
-		args = append(args, legacyName)
+		args = append(args, nameJSON)
 		argIdx++
 	}
 	if req.Code != nil {
