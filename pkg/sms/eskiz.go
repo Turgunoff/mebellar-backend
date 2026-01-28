@@ -257,7 +257,8 @@ type SMSService interface {
 
 // SendOTP - OTP kod yuborish (formatlangan xabar bilan)
 func (e *EskizService) SendOTP(phone, code string) error {
-	message := fmt.Sprintf("Mebellar Olami tizimiga kirish kodi: %s", code)
+	// Using approved template for testing
+	message := fmt.Sprintf("Verification code to log in to the Edumate platform: %s. n8SDK1tHd", code)
 	return e.SendSMS(phone, message)
 }
 
