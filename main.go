@@ -327,7 +327,7 @@ func main() {
 	// Keepalive settings to prevent stream disconnection
 	kasp := keepalive.ServerParameters{
 		MaxConnectionIdle:     15 * time.Second, // If a client is idle for 15 seconds, send a GOAWAY
-		MaxConnectionAge:      0,                 // Infinite
+		MaxConnectionAge:      0,                // Infinite
 		MaxConnectionAgeGrace: 5 * time.Second,  // Allow 5s for pending RPCs to finish
 		Time:                  20 * time.Second, // Ping the client every 20 seconds to keep the connection alive
 		Timeout:               5 * time.Second,  // Wait 5 seconds for the ping response

@@ -128,24 +128,25 @@ type RegionalPriceGroup struct {
 // DeliverySettings - yetkazib berish sozlamalari (yangi format)
 // @Description Delivery settings with home region and regional groups
 // JSON format:
-// {
-//   "has_installation": true,
-//   "installation_price": 200000,
-//   "home_region_price": 0,
-//   "is_home_region_free": true,
-//   "home_delivery_days": "1 kun",
-//   "regional_prices": [
-//     {"ids": ["1", "2"], "price": 50000, "delivery_days": "3-5 kun"},
-//     {"ids": ["3"], "price": 60000, "delivery_days": "5-7 kun"}
-//   ]
-// }
+//
+//	{
+//	  "has_installation": true,
+//	  "installation_price": 200000,
+//	  "home_region_price": 0,
+//	  "is_home_region_free": true,
+//	  "home_delivery_days": "1 kun",
+//	  "regional_prices": [
+//	    {"ids": ["1", "2"], "price": 50000, "delivery_days": "3-5 kun"},
+//	    {"ids": ["3"], "price": 60000, "delivery_days": "5-7 kun"}
+//	  ]
+//	}
 type DeliverySettings struct {
-	HasInstallation    bool                 `json:"has_installation" example:"true"`
-	InstallationPrice  float64              `json:"installation_price" example:"200000"`
-	HomeRegionPrice    float64              `json:"home_region_price" example:"0"`
-	IsHomeRegionFree   bool                 `json:"is_home_region_free" example:"true"`
-	HomeDeliveryDays   string               `json:"home_delivery_days" example:"1 kun"`
-	RegionalPrices     []RegionalPriceGroup `json:"regional_prices,omitempty"`
+	HasInstallation   bool                 `json:"has_installation" example:"true"`
+	InstallationPrice float64              `json:"installation_price" example:"200000"`
+	HomeRegionPrice   float64              `json:"home_region_price" example:"0"`
+	IsHomeRegionFree  bool                 `json:"is_home_region_free" example:"true"`
+	HomeDeliveryDays  string               `json:"home_delivery_days" example:"1 kun"`
+	RegionalPrices    []RegionalPriceGroup `json:"regional_prices,omitempty"`
 }
 
 // ============================================
@@ -347,18 +348,18 @@ type ProductsResponse struct {
 
 // CategoryProductsGroup - kategoriya va uning mahsulotlari guruhi
 type CategoryProductsGroup struct {
-	Category  Category  `json:"category"`
-	Products  []Product `json:"products"`
-	Total     int       `json:"total"`     // Jami mahsulotlar soni (preview emas)
-	HasMore   bool      `json:"has_more"`  // Yana mahsulotlar bormi
+	Category Category  `json:"category"`
+	Products []Product `json:"products"`
+	Total    int       `json:"total"`    // Jami mahsulotlar soni (preview emas)
+	HasMore  bool      `json:"has_more"` // Yana mahsulotlar bormi
 }
 
 // GroupedProductsResponse - guruhlangan mahsulotlar javob modeli
 type GroupedProductsResponse struct {
-	Success bool                   `json:"success"`
-	Message string                 `json:"message,omitempty"`
+	Success bool                    `json:"success"`
+	Message string                  `json:"message,omitempty"`
 	Groups  []CategoryProductsGroup `json:"groups"`
-	Count   int                    `json:"count"` // Jami guruhlar soni
+	Count   int                     `json:"count"` // Jami guruhlar soni
 }
 
 // Category - kategoriya modeli category.go faylida aniqlangan

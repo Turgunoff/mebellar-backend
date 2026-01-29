@@ -6,8 +6,8 @@ import "time"
 // @Description Region ma'lumotlari
 type Region struct {
 	ID        int       `json:"id" example:"1"`
-	Name      string    `json:"name" example:"Toshkent sh."`                  // Legacy: plain string name
-	NameJSONB StringMap `json:"name_jsonb,omitempty" swaggertype:"object"`    // Multi-language: {"uz": "...", "ru": "...", "en": "..."}
+	Name      string    `json:"name" example:"Toshkent sh."`               // Legacy: plain string name
+	NameJSONB StringMap `json:"name_jsonb,omitempty" swaggertype:"object"` // Multi-language: {"uz": "...", "ru": "...", "en": "..."}
 	Code      string    `json:"code,omitempty" example:"UZ-TK"`
 	IsActive  bool      `json:"is_active" example:"true"`
 	Ordering  int       `json:"ordering" example:"1"`

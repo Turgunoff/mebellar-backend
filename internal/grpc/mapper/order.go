@@ -45,13 +45,13 @@ func ToModelOrderStatus(status pb.OrderStatus) string {
 
 func ToPBOrderItem(item models.OrderItem) *pb.OrderItem {
 	pbItem := &pb.OrderItem{
-		Id:          item.ID,
-		OrderId:     item.OrderID,
-		ProductName: item.ProductName,
+		Id:           item.ID,
+		OrderId:      item.OrderID,
+		ProductName:  item.ProductName,
 		ProductImage: item.ProductImage,
-		Quantity:    int32(item.Quantity),
-		Price:       item.Price,
-		CreatedAt:   timestamppb.New(item.CreatedAt),
+		Quantity:     int32(item.Quantity),
+		Price:        item.Price,
+		CreatedAt:    timestamppb.New(item.CreatedAt),
 	}
 	if item.ProductID != nil {
 		pbItem.ProductId = *item.ProductID

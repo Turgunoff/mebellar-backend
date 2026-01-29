@@ -694,7 +694,7 @@ func (s *ShopServiceServer) getShopByField(ctx context.Context, field, value str
 	`, field)
 
 	row := s.db.QueryRowContext(ctx, query, value)
-	
+
 	// Scan into variables
 	var id, sellerID, slug string
 	var name, description, address, workingHours, regionName []byte
@@ -704,7 +704,7 @@ func (s *ShopServiceServer) getShopByField(ctx context.Context, field, value str
 	var isActive, isVerified, isMain bool
 	var rating float64
 	var createdAt, updatedAt time.Time
-	
+
 	err := row.Scan(&id, &sellerID, &name, &description, &address, &slug, &logoURL, &bannerURL,
 		&phone, &latitude, &longitude, &regionID, &regionName, &workingHours, &isActive, &isVerified, &isMain, &rating, &createdAt, &updatedAt)
 	if err == sql.ErrNoRows {
@@ -713,7 +713,7 @@ func (s *ShopServiceServer) getShopByField(ctx context.Context, field, value str
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "query error: %v", err)
 	}
-	
+
 	shop := s.buildShop(id, sellerID, name, description, address, slug, logoURL, bannerURL, phone, latitude, longitude, regionID, regionName, workingHours, isActive, isVerified, isMain, rating, createdAt, updatedAt)
 	return shop, nil
 }

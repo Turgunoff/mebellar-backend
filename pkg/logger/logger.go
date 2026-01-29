@@ -36,7 +36,7 @@ func InitLogger(environment string) error {
 
 	// Создание logger
 	logger, err := config.Build(
-		zap.AddCallerSkip(1), // Пропустить обертку для корректного caller
+		zap.AddCallerSkip(1),                  // Пропустить обертку для корректного caller
 		zap.AddStacktrace(zapcore.ErrorLevel), // Stacktrace только для errors
 	)
 	if err != nil {

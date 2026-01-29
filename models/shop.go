@@ -13,37 +13,37 @@ import (
 // @Description Do'kon ma'lumotlari
 type Shop struct {
 	// Asosiy identifikatorlar
-	ID       string  `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	SellerID string  `json:"seller_id" example:"550e8400-e29b-41d4-a716-446655440001"`
-	
+	ID       string `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	SellerID string `json:"seller_id" example:"550e8400-e29b-41d4-a716-446655440001"`
+
 	// Multi-language maydonlar
-	Name        StringMap    `json:"name" swaggertype:"object"`
-	Description StringMap    `json:"description,omitempty" swaggertype:"object"`
-	Address     StringMap    `json:"address,omitempty" swaggertype:"object"`
-	
+	Name        StringMap `json:"name" swaggertype:"object"`
+	Description StringMap `json:"description,omitempty" swaggertype:"object"`
+	Address     StringMap `json:"address,omitempty" swaggertype:"object"`
+
 	// SEO va identifikatsiya
 	Slug string `json:"slug" example:"mebel-house-tashkent"`
-	
+
 	// Media
 	LogoURL   string `json:"logo_url,omitempty" example:"https://example.com/logo.jpg"`
 	BannerURL string `json:"banner_url,omitempty" example:"https://example.com/banner.jpg"`
-	
+
 	// Aloqa va joylashuv
 	Phone      string    `json:"phone,omitempty" example:"+998901234567"`
 	Latitude   *float64  `json:"latitude,omitempty" example:"41.311081"`
 	Longitude  *float64  `json:"longitude,omitempty" example:"69.240562"`
-	RegionID  *int        `json:"region_id,omitempty" example:"1"`
-	RegionName StringMap  `json:"region_name,omitempty" swaggertype:"object"` // Region name from JOIN (JSONB)
-	
+	RegionID   *int      `json:"region_id,omitempty" example:"1"`
+	RegionName StringMap `json:"region_name,omitempty" swaggertype:"object"` // Region name from JOIN (JSONB)
+
 	// Ish vaqtlari
 	WorkingHours WorkingHours `json:"working_hours,omitempty" swaggertype:"object"`
-	
+
 	// Status va reyting
 	IsActive   bool    `json:"is_active" example:"true"`
 	IsVerified bool    `json:"is_verified" example:"false"`
 	IsMain     bool    `json:"is_main" example:"false"`
 	Rating     float64 `json:"rating" example:"4.5"`
-	
+
 	// Vaqt belgilari
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
@@ -119,11 +119,11 @@ func GenerateSlugFromName(nameMap StringMap) string {
 			}
 		}
 	}
-	
+
 	if englishName == "" {
 		return ""
 	}
-	
+
 	// Slug yaratish
 	slug := ""
 	for _, r := range englishName {
@@ -140,10 +140,10 @@ func GenerateSlugFromName(nameMap StringMap) string {
 			}
 		}
 	}
-	
+
 	// Oxiridagi tire ni olib tashlash
 	slug = strings.Trim(slug, "-")
-	
+
 	return slug
 }
 
@@ -153,32 +153,32 @@ func GenerateSlugFromName(nameMap StringMap) string {
 
 // CreateShopRequest - do'kon yaratish so'rovi
 type CreateShopRequest struct {
-	Name        StringMap     `json:"name" binding:"required"` // {"uz": "...", "ru": "...", "en": "..."}
-	Description *StringMap    `json:"description,omitempty"`
-	Address     *StringMap    `json:"address,omitempty"`
-	Phone       *string      `json:"phone,omitempty"`
-	RegionID    *int         `json:"region_id,omitempty"`
-	Latitude    *float64      `json:"latitude,omitempty"`
-	Longitude   *float64      `json:"longitude,omitempty"`
+	Name         StringMap     `json:"name" binding:"required"` // {"uz": "...", "ru": "...", "en": "..."}
+	Description  *StringMap    `json:"description,omitempty"`
+	Address      *StringMap    `json:"address,omitempty"`
+	Phone        *string       `json:"phone,omitempty"`
+	RegionID     *int          `json:"region_id,omitempty"`
+	Latitude     *float64      `json:"latitude,omitempty"`
+	Longitude    *float64      `json:"longitude,omitempty"`
 	WorkingHours *WorkingHours `json:"working_hours,omitempty"`
-	IsMain      *bool         `json:"is_main,omitempty"`
-	IsActive    *bool         `json:"is_active,omitempty"`
+	IsMain       *bool         `json:"is_main,omitempty"`
+	IsActive     *bool         `json:"is_active,omitempty"`
 }
 
 // UpdateShopRequest - do'kon yangilash so'rovi
 type UpdateShopRequest struct {
-	Name        *StringMap    `json:"name,omitempty"`
-	Description *StringMap    `json:"description,omitempty"`
-	Address     *StringMap    `json:"address,omitempty"`
-	Phone       *string       `json:"phone,omitempty"`
-	RegionID    *int          `json:"region_id,omitempty"`
-	Latitude    *float64      `json:"latitude,omitempty"`
-	Longitude   *float64      `json:"longitude,omitempty"`
-	LogoURL     *string       `json:"logo_url,omitempty"`
-	BannerURL   *string       `json:"banner_url,omitempty"`
+	Name         *StringMap    `json:"name,omitempty"`
+	Description  *StringMap    `json:"description,omitempty"`
+	Address      *StringMap    `json:"address,omitempty"`
+	Phone        *string       `json:"phone,omitempty"`
+	RegionID     *int          `json:"region_id,omitempty"`
+	Latitude     *float64      `json:"latitude,omitempty"`
+	Longitude    *float64      `json:"longitude,omitempty"`
+	LogoURL      *string       `json:"logo_url,omitempty"`
+	BannerURL    *string       `json:"banner_url,omitempty"`
 	WorkingHours *WorkingHours `json:"working_hours,omitempty"`
-	IsMain      *bool         `json:"is_main,omitempty"`
-	IsActive    *bool         `json:"is_active,omitempty"`
+	IsMain       *bool         `json:"is_main,omitempty"`
+	IsActive     *bool         `json:"is_active,omitempty"`
 }
 
 // ShopResponse - bitta do'kon javobi

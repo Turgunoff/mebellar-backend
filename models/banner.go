@@ -6,8 +6,8 @@ import "time"
 // @Description Home sahifadagi banner
 type Banner struct {
 	ID         string            `json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Title      map[string]string `json:"title"`      // {"uz": "...", "ru": "...", "en": "..."}
-	Subtitle   map[string]string `json:"subtitle"`   // {"uz": "...", "ru": "...", "en": "..."}
+	Title      map[string]string `json:"title"`    // {"uz": "...", "ru": "...", "en": "..."}
+	Subtitle   map[string]string `json:"subtitle"` // {"uz": "...", "ru": "...", "en": "..."}
 	ImageURL   string            `json:"image_url" example:"https://example.com/banner.jpg"`
 	TargetType string            `json:"target_type" example:"category"` // none, category, product, external
 	TargetID   *string           `json:"target_id,omitempty" example:"550e8400-e29b-41d4-a716-446655440001"`

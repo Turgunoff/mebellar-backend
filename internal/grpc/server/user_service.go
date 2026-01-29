@@ -408,7 +408,7 @@ func (s *UserServiceServer) UploadAvatar(stream pb.UserService_UploadAvatarServe
 	}
 
 	return stream.SendAndClose(&pb.UploadAvatarResponse{
-		Success:  true,
+		Success:   true,
 		AvatarUrl: avatarURL,
 		Message:   "Avatar uploaded successfully",
 	})

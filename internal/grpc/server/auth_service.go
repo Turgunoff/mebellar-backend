@@ -314,4 +314,3 @@ func (s *AuthServiceServer) issueTokens(userID, phone, role string) (string, str
 func AuthFromContext(ctx context.Context) *middleware.AuthContext {
 	return middleware.GetAuthContext(ctx)
 }
-

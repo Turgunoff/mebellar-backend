@@ -447,4 +447,3 @@ func (b *orderBroadcaster) Publish(shopID string, evt *pb.OrderEvent) {
 		}
 	}
 }
-

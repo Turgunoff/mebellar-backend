@@ -68,11 +68,11 @@ func (s *CommonServiceServer) ListRegions(ctx context.Context, req *pb.ListRegio
 		}
 
 		region := &pb.Region{
-			Id:             id,
-			Name:           legacyName,
-			NameLocalized:  mapToLocalizedString(nameMap),
-			IsActive:       isActive,
-			Ordering:       ordering,
+			Id:            id,
+			Name:          legacyName,
+			NameLocalized: mapToLocalizedString(nameMap),
+			IsActive:      isActive,
+			Ordering:      ordering,
 		}
 		if code.Valid {
 			region.Code = code.String

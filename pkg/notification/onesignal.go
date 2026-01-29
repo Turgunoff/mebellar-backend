@@ -12,9 +12,9 @@ import (
 
 // OneSignalService - OneSignal push notification xizmati
 type OneSignalService struct {
-	AppID     string
+	AppID      string
 	RestAPIKey string
-	Client    *http.Client
+	Client     *http.Client
 }
 
 // NotificationPayload - OneSignal notification payload

@@ -105,7 +105,7 @@ func UpdateUserFieldHelper(ctx context.Context, db *sql.DB, fieldName string, fi
 
 // VerifyAndUpdateUserFieldHelper is a generic helper for verifying and updating user fields
 // This consolidates common patterns for verification flows (phone, email, etc.)
-// 
+//
 // Parameters:
 // - ctx: context
 // - db: database connection
@@ -120,23 +120,23 @@ func UpdateUserFieldHelper(ctx context.Context, db *sql.DB, fieldName string, fi
 func VerifyAndUpdateUserFieldHelper(ctx context.Context, db *sql.DB, fieldName, newValue, verificationCode, userID, messageOnSuccess string) (bool, string, interface{}, error) {
 	// Note: Actual verification code check should be done by caller
 	// This is just a placeholder - in production you'd validate against sent code
-	
+
 	// Trim spaces
 	newValue = strings.TrimSpace(newValue)
 	verificationCode = strings.TrimSpace(verificationCode)
-	
+
 	if newValue == "" || verificationCode == "" {
 		return false, fieldName + " and code are required", nil, status.Errorf(codes.InvalidArgument, "%s and code are required", fieldName)
 	}
-	
+
 	// TODO: Verify code from OTP/Email verification system
 	// For now, assume verification is successful
-	
+
 	// Update field
 	err := UpdateUserFieldHelper(ctx, db, fieldName, newValue, userID)
 	if err != nil {
 		return false, "update error", nil, err
 	}
-	
+
 	return true, messageOnSuccess, nil, nil
 }

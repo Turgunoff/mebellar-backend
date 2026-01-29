@@ -115,12 +115,12 @@ type CategoryAttributesResponse struct {
 
 // CreateCategoryAttributeRequest - atribut yaratish so'rovi
 type CreateCategoryAttributeRequest struct {
-	Key        string           `json:"key" example:"mechanism"`
-	Type       string           `json:"type" example:"dropdown"`
+	Key        string            `json:"key" example:"mechanism"`
+	Type       string            `json:"type" example:"dropdown"`
 	Label      map[string]string `json:"label"`
 	Options    []AttributeOption `json:"options,omitempty"`
-	IsRequired bool             `json:"is_required"`
-	SortOrder  int              `json:"sort_order"`
+	IsRequired bool              `json:"is_required"`
+	SortOrder  int               `json:"sort_order"`
 }
 
 // UpdateCategoryAttributeRequest - atribut yangilash so'rovi

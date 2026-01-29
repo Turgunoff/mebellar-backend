@@ -95,10 +95,10 @@ type SellerProfile struct {
 	BankName    string `json:"bank_name,omitempty" example:"Kapitalbank"`
 
 	// Aloqa va joylashuv
-	SupportPhone string   `json:"support_phone,omitempty" example:"+998901234567"`
+	SupportPhone string    `json:"support_phone,omitempty" example:"+998901234567"`
 	Address      StringMap `json:"address,omitempty" swaggertype:"object"`
-	Latitude     *float64 `json:"latitude,omitempty" example:"41.311081"`
-	Longitude    *float64 `json:"longitude,omitempty" example:"69.240562"`
+	Latitude     *float64  `json:"latitude,omitempty" example:"41.311081"`
+	Longitude    *float64  `json:"longitude,omitempty" example:"69.240562"`
 
 	// JSONB maydonlari
 	SocialLinks  SocialLinks  `json:"social_links,omitempty" swaggertype:"object"`

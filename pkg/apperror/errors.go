@@ -10,11 +10,11 @@ import (
 
 // AppError представляет ошибку приложения
 type AppError struct {
-	Code       string     `json:"code"`        // Код ошибки для клиента
-	Message    string     `json:"message"`     // Сообщение для пользователя
-	HTTPStatus int        `json:"-"`           // HTTP статус код
-	GRPCCode   codes.Code `json:"-"`           // gRPC статус код
-	Internal   error      `json:"-"`           // Внутренняя ошибка (не показывается клиенту)
+	Code       string     `json:"code"`    // Код ошибки для клиента
+	Message    string     `json:"message"` // Сообщение для пользователя
+	HTTPStatus int        `json:"-"`       // HTTP статус код
+	GRPCCode   codes.Code `json:"-"`       // gRPC статус код
+	Internal   error      `json:"-"`       // Внутренняя ошибка (не показывается клиенту)
 }
 
 func (e *AppError) Error() string {
