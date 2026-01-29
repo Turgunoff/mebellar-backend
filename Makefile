@@ -97,3 +97,70 @@ clean:
 	@echo "🧹 Cleaning..."
 	rm -rf bin/
 	go clean
+
+# Docker commands
+.PHONY: docker-build
+docker-build:
+	@echo "🐳 Building Docker image..."
+	docker build -t mebellar-backend:latest .
+
+.PHONY: docker-up
+docker-up:
+	@echo "🚀 Starting Docker containers..."
+	docker-compose up -d
+
+.PHONY: docker-down
+docker-down:
+	@echo "🛑 Stopping Docker containers..."
+	docker-compose down
+
+.PHONY: docker-logs
+docker-logs:
+	@echo "📋 Showing Docker logs..."
+	docker-compose logs -f backend
+
+.PHONY: docker-restart
+docker-restart:
+	@echo "🔄 Restarting Docker containers..."
+	docker-compose restart
+
+.PHONY: docker-clean
+docker-clean:
+	@echo "🧹 Cleaning Docker resources..."
+	docker-compose down -v
+	docker system prune -f
+
+# Development Docker
+.PHONY: docker-dev
+docker-dev:
+	@echo "🚀 Starting development containers..."
+	docker-compose -f docker-compose.dev.yml up -d
+
+.PHONY: docker-dev-down
+docker-dev-down:
+	@echo "🛑 Stopping development containers..."
+	docker-compose -f docker-compose.dev.yml down
+
+# Production deployment
+.PHONY: docker-prod-build
+docker-prod-build:
+	@echo "🏗️ Building production image..."
+	docker build -t mebellar-backend:$(VERSION) -t mebellar-backend:latest .
+
+.PHONY: docker-prod-push
+docker-prod-push:
+	@echo "📤 Pushing to registry..."
+	docker tag mebellar-backend:latest ghcr.io/turgunoff/mebellar-backend:latest
+	docker push ghcr.io/turgunoff/mebellar-backend:latest
+
+# Code quality
+.PHONY: lint
+lint:
+	@echo "🔍 Running linters..."
+	golangci-lint run --timeout=5m
+
+.PHONY: fmt
+fmt:
+	@echo "✨ Formatting code..."
+	gofmt -s -w .
+	go mod tidy

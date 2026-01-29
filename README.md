@@ -612,12 +612,169 @@ TEST_DB_NAME=mebellar_test
 
 ---
 
+## � Docker Deployment
+
+### Quick Start с Docker Compose
+
+```bash
+# 1. Клонировать репозиторий
+git clone https://github.com/Turgunoff/mebellar-backend.git
+cd mebellar-backend
+
+# 2. Создать .env файл
+cp .env.example .env
+# Отредактировать .env (установить JWT_SECRET, пароли и т.д.)
+
+# 3. Запустить все сервисы
+docker-compose up -d
+
+# 4. Проверить статус
+docker-compose ps
+
+# 5. Посмотреть логи
+docker-compose logs -f backend
+```
+
+### Development окружение
+
+```bash
+# Запустить только БД и Redis
+docker-compose -f docker-compose.dev.yml up -d
+
+# Запустить backend локально
+go run main.go
+```
+
+### Production deployment
+
+```bash
+# Build production image
+make docker-prod-build VERSION=1.0.0
+
+# Deploy на сервере
+docker-compose up -d
+```
+
+### Docker команды
+
+```bash
+# Rebuild и restart
+docker-compose up -d --build
+
+# Остановить все
+docker-compose down
+
+# Удалить volumes (⚠️ удалит данные!)
+docker-compose down -v
+
+# Посмотреть логи
+docker-compose logs -f [service_name]
+
+# Выполнить команду в контейнере
+docker-compose exec backend sh
+```
+
+---
+
+## ⚡ Performance & Caching
+
+### Redis Configuration
+
+Проект использует Redis для:
+
+✅ Rate limiting (защита от DDOS)  
+✅ Кэширование категорий, регионов  
+✅ Session management (опционально)
+
+### Настройка кэша
+
+```env
+# .env
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
+```
+
+### Rate Limiting
+
+| Endpoint       | Лимит       | Окно     |
+| -------------- | ----------- | -------- |
+| /auth/login    | 5 запросов  | 1 минута |
+| /auth/send-otp | 3 запроса   | 1 минута |
+| /auth/register | 3 запроса   | 1 минута |
+| Остальные      | 60 запросов | 1 минута |
+
+---
+
+## 🚀 CI/CD Pipeline
+
+### GitHub Actions Workflows
+
+Проект использует автоматический CI/CD:
+
+**На каждый Push/PR:**
+
+✅ Lint & Code Quality Check  
+✅ Unit Tests (с coverage ≥70%)  
+✅ Integration Tests  
+✅ Security Scan  
+✅ Docker Image Build
+
+**На Push в main:**
+
+✅ Deploy to Staging  
+✅ Smoke Tests
+
+### Локальный запуск CI проверок
+
+```bash
+# Lint
+make lint
+
+# Tests
+make test
+
+# Coverage
+make test-coverage
+
+# Build Docker
+make docker-build
+```
+
+---
+
+## 🔒 Security Best Practices
+
+### Production Checklist
+
+- ✅ SSL enabled для PostgreSQL
+- ✅ JWT_SECRET минимум 32 символа
+- ✅ Rate limiting включен
+- ✅ CORS правильно настроен
+- ✅ Input validation на всех endpoints
+- ✅ Secrets не в коде (через .env)
+- ✅ Non-root Docker user
+- ✅ Security scanning в CI/CD
+- ✅ Structured logging (нет логирования OTP/паролей)
+
+### Рекомендации
+
+🔄 Регулярно обновлять зависимости  
+🔒 Использовать secrets manager (AWS Secrets, Vault)  
+📊 Настроить monitoring (Prometheus + Grafana)  
+🔐 Включить 2FA для админов  
+💾 Настроить автоматические бэкапы БД
+
+---
+
 ## 📚 Qo'shimcha Ma'lumotlar
 
 - **Swagger UI**: `http://localhost:8081/swagger/index.html`
 - **WebSocket**: Real-time buyurtmalar kuzatuv uchun
 - **Multi-Shop**: Bir foydalanuvchi bir nechta do'kon yaratishi mumkin
 - **File Uploads**: `uploads/` papkasida saqlanadi
+- **Health Check**: `http://localhost:8081/health`
 
 ---
 

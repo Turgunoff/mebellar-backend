@@ -1,0 +1,54 @@
+# Multi-stage build для минимального размера образа
+
+# Stage 1: Build
+FROM golang:1.23-alpine AS builder
+
+# Установка необходимых инструментов
+RUN apk add --no-cache git make
+
+# Рабочая директория
+WORKDIR /app
+
+# Копируем go.mod и go.sum для кэширования зависимостей
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Копируем весь код
+COPY . .
+
+# Билдим приложение
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o mebellar-backend .
+
+# Stage 2: Runtime
+FROM alpine:latest
+
+# Установка необходимых пакетов
+RUN apk --no-cache add ca-certificates tzdata wget
+
+# Создаем non-root пользователя
+RUN addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
+
+WORKDIR /app
+
+# Копируем бинарник из builder stage
+COPY --from=builder /app/mebellar-backend .
+
+# Копируем migrations
+COPY --from=builder /app/migrations ./migrations
+
+# Создаем директорию для uploads
+RUN mkdir -p /app/uploads && chown -R appuser:appuser /app
+
+# Переключаемся на non-root пользователя
+USER appuser
+
+# Expose портов
+EXPOSE 8081 50051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8081/health || exit 1
+
+# Запуск приложения
+CMD ["./mebellar-backend"]

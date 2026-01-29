@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # PostgreSQL для development
+  postgres:
+    image: postgres:15-alpine
+    container_name: mebellar_postgres_dev
+    environment:
+      POSTGRES_USER: mebel_user
+      POSTGRES_PASSWORD: dev_password
+      POSTGRES_DB: mebellar_olami
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    networks:
+      - mebellar_dev_network
+
+  # Redis для development
+  redis:
+    image: redis:7-alpine
+    container_name: mebellar_redis_dev
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - mebellar_dev_network
+
+  # Test database (опционально)
+  postgres_test:
+    image: postgres:15-alpine
+    container_name: mebellar_postgres_test
+    environment:
+      POSTGRES_USER: mebel_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: mebellar_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    networks:
+      - mebellar_dev_network
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+  postgres_test_data:
+
+networks:
+  mebellar_dev_network:
+    driver: bridge

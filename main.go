@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -14,13 +15,16 @@ import (
 
 	"mebellar-backend/internal/grpc/middleware"
 	"mebellar-backend/internal/grpc/server"
+	"mebellar-backend/pkg/cache"
 	"mebellar-backend/pkg/database"
 	"mebellar-backend/pkg/logger"
 	"mebellar-backend/pkg/pb"
+	"mebellar-backend/pkg/ratelimit"
 	"mebellar-backend/pkg/sms"
 
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
@@ -221,17 +225,59 @@ func main() {
 	// 7. Настройка connection pool
 	configureConnectionPool(db)
 
-	// 8. Миграции
+	// 8. Redis setup
+	logger.Info("Initializing Redis connection")
+	redisClient := initRedis()
+	if redisClient != nil {
+		defer redisClient.Close()
+		logger.Info("Redis connected successfully")
+	} else {
+		logger.Warn("Redis not available, using in-memory rate limiting and caching")
+	}
+
+	// 9. Cache setup
+	var cacheService cache.Cache
+	if redisClient != nil {
+		cacheService = cache.NewRedisCache(redisClient, "mebellar:")
+		logger.Info("Redis cache initialized")
+	} else {
+		cacheService = cache.NewMemoryCache()
+		logger.Info("In-memory cache initialized")
+	}
+
+	// 10. Rate limiting setup
+	var rateLimiters map[string]ratelimit.Limiter
+	if redisClient != nil {
+		// Distributed rate limiting с Redis
+		rateLimiters = map[string]ratelimit.Limiter{
+			"/auth.AuthService/Login":    ratelimit.NewRedisLimiter(redisClient, 5, 1*time.Minute),
+			"/auth.AuthService/SendOTP":  ratelimit.NewRedisLimiter(redisClient, 3, 1*time.Minute),
+			"/auth.AuthService/Register": ratelimit.NewRedisLimiter(redisClient, 3, 1*time.Minute),
+			"default":                    ratelimit.NewRedisLimiter(redisClient, 60, 1*time.Minute),
+		}
+		logger.Info("Redis-based rate limiting initialized")
+	} else {
+		// In-memory rate limiting для single instance
+		rateLimiters = map[string]ratelimit.Limiter{
+			"/auth.AuthService/Login":    ratelimit.NewMemoryLimiter(5, 10),
+			"/auth.AuthService/SendOTP":  ratelimit.NewMemoryLimiter(3, 5),
+			"/auth.AuthService/Register": ratelimit.NewMemoryLimiter(3, 5),
+			"default":                    ratelimit.NewMemoryLimiter(60, 100),
+		}
+		logger.Info("In-memory rate limiting initialized")
+	}
+
+	// 11. Миграции
 	logger.Info("Running database migrations")
 	if err := database.RunMigrations(db, "./migrations"); err != nil {
 		logger.Fatal("Migration error", zap.Error(err))
 	}
 
-	// 9. SMS xizmatini ishga tushirish
+	// 12. SMS xizmatini ishga tushirish
 	logger.Info("Initializing SMS service")
 	smsService := initSMSService()
 
-	// 10. gRPC Server setup
+	// 13. gRPC Server setup
 	logger.Info("Configuring gRPC server")
 
 	// Methods that don't require authentication
@@ -292,12 +338,13 @@ func main() {
 		PermitWithoutStream: true,            // Allow pings even when there are no active streams
 	}
 
-	// Chain interceptors: Logger first, then Auth
+	// Chain interceptors: Logger first, then Rate Limiting, then Auth
 	grpcServer := grpc.NewServer(
 		grpc.KeepaliveParams(kasp),
 		grpc.KeepaliveEnforcementPolicy(kaep),
 		grpc.ChainUnaryInterceptor(
 			middleware.UnaryLogger,
+			middleware.AdaptiveRateLimitInterceptor(rateLimiters),
 			unaryAuthInterceptor,
 		),
 		grpc.ChainStreamInterceptor(
@@ -319,7 +366,7 @@ func main() {
 	productService := server.NewProductServiceServer(db)
 	pb.RegisterProductServiceServer(grpcServer, productService)
 
-	categoryService := server.NewCategoryServiceServer(db)
+	categoryService := server.NewCategoryServiceServer(db, cacheService)
 	pb.RegisterCategoryServiceServer(grpcServer, categoryService)
 
 	shopService := server.NewShopServiceServer(db)
@@ -431,4 +478,38 @@ func initSMSService() sms.SMSService {
 		}
 	}()
 	return eskizService
+}
+
+// initRedis инициализирует подключение к Redis
+func initRedis() *redis.Client {
+	redisHost := getEnv("REDIS_HOST", "localhost")
+	redisPort := getEnv("REDIS_PORT", "6379")
+	redisPassword := getEnv("REDIS_PASSWORD", "")
+	redisDB := getEnvInt("REDIS_DB", 0)
+
+	client := redis.NewClient(&redis.Options{
+		Addr:     fmt.Sprintf("%s:%s", redisHost, redisPort),
+		Password: redisPassword,
+		DB:       redisDB,
+		PoolSize: 10,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		logger.Error("Failed to connect to Redis",
+			zap.String("host", redisHost),
+			zap.String("port", redisPort),
+			zap.Error(err),
+		)
+		return nil
+	}
+
+	logger.Info("Redis connection established",
+		zap.String("host", redisHost),
+		zap.String("port", redisPort),
+	)
+
+	return client
 }

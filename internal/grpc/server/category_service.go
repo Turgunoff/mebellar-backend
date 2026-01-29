@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"mebellar-backend/internal/grpc/middleware"
+	"mebellar-backend/pkg/cache"
+	"mebellar-backend/pkg/logger"
 	"mebellar-backend/pkg/pb"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -18,11 +22,15 @@ import (
 
 type CategoryServiceServer struct {
 	pb.UnimplementedCategoryServiceServer
-	db *sql.DB
+	db    *sql.DB
+	cache cache.Cache
 }
 
-func NewCategoryServiceServer(db *sql.DB) *CategoryServiceServer {
-	return &CategoryServiceServer{db: db}
+func NewCategoryServiceServer(db *sql.DB, cache cache.Cache) *CategoryServiceServer {
+	return &CategoryServiceServer{
+		db:    db,
+		cache: cache,
+	}
 }
 
 // ============================================
@@ -30,6 +38,23 @@ func NewCategoryServiceServer(db *sql.DB) *CategoryServiceServer {
 // ============================================
 
 func (s *CategoryServiceServer) ListCategories(ctx context.Context, req *pb.ListCategoriesRequest) (*pb.ListCategoriesResponse, error) {
+	// Попытка получить из кэша
+	cacheKey := fmt.Sprintf("categories:list:active_%v", req.GetActiveOnly())
+	var categories []*pb.Category
+
+	if err := s.cache.Get(cacheKey, &categories); err == nil {
+		logger.Debug("Categories loaded from cache",
+			zap.String("cache_key", cacheKey),
+			zap.Int("count", len(categories)),
+		)
+		return &pb.ListCategoriesResponse{
+			Categories: categories,
+		}, nil
+	}
+
+	// Cache miss - загружаем из БД
+	logger.Debug("Categories cache miss, loading from database")
+
 	where := "1=1"
 	if req.GetActiveOnly() {
 		where = "is_active = true"
@@ -104,6 +129,11 @@ func (s *CategoryServiceServer) ListCategories(ctx context.Context, req *pb.List
 			attrs, _ := s.getCategoryAttributes(ctx, cat.Id)
 			cat.Attributes = attrs
 		}
+	}
+
+	// Сохраняем в кэш на 1 час
+	if err := s.cache.Set(cacheKey, rootCategories, 1*time.Hour); err != nil {
+		logger.Warn("Failed to cache categories", zap.Error(err))
 	}
 
 	return &pb.ListCategoriesResponse{
@@ -301,6 +331,9 @@ func (s *CategoryServiceServer) CreateCategory(ctx context.Context, req *pb.Crea
 		return nil, status.Errorf(codes.Internal, "failed to create category: %v", err)
 	}
 
+	// Инвалидируем кэш категорий
+	s.invalidateCategoryCache()
+
 	return s.GetCategory(ctx, &pb.GetCategoryRequest{Id: id})
 }
 
@@ -372,6 +405,9 @@ func (s *CategoryServiceServer) UpdateCategory(ctx context.Context, req *pb.Upda
 		return nil, status.Error(codes.NotFound, "category not found")
 	}
 
+	// Инвалидируем кэш категорий
+	s.invalidateCategoryCache()
+
 	return s.GetCategory(ctx, &pb.GetCategoryRequest{Id: req.GetId()})
 }
 
@@ -412,6 +448,9 @@ func (s *CategoryServiceServer) DeleteCategory(ctx context.Context, req *pb.Dele
 	if rowsAffected == 0 {
 		return nil, status.Error(codes.NotFound, "category not found")
 	}
+
+	// Инвалидируем кэш категорий
+	s.invalidateCategoryCache()
 
 	return &pb.Empty{}, nil
 }
@@ -727,4 +766,24 @@ func generateSlug(name string) string {
 	}
 	slug = strings.Trim(slug, "-")
 	return slug
+}
+
+// invalidateCategoryCache инвалидирует все кэши категорий
+func (s *CategoryServiceServer) invalidateCategoryCache() {
+	// Инвалидируем разные варианты кэша
+	cacheKeys := []string{
+		"categories:list:active_true",
+		"categories:list:active_false",
+	}
+
+	for _, key := range cacheKeys {
+		if err := s.cache.Delete(key); err != nil {
+			logger.Warn("Failed to invalidate category cache",
+				zap.String("key", key),
+				zap.Error(err),
+			)
+		}
+	}
+
+	logger.Debug("Category cache invalidated")
 }

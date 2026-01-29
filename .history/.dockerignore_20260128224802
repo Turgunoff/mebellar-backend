@@ -1,0 +1,44 @@
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Development files
+*.log
+*.swp
+*.swo
+*~
+
+# Test files
+*_test.go
+coverage.out
+coverage.html
+
+# Build artifacts
+bin/
+dist/
+*.exe
+
+# IDE
+.vscode
+.idea
+*.iml
+.history
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Temporary files
+tmp/
+temp/
+uploads/*
+!uploads/.gitkeep
+
+# macOS
+.DS_Store
