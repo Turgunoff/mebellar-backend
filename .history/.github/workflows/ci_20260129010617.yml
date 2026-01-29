@@ -99,38 +99,38 @@ jobs:
           port: 22
           script: |
             set -e
-
+            
             echo "🚀 Starting deployment..."
-
+            
             cd ~/mebellar-backend
-
+            
             # Clean state
             git reset --hard origin/main
             git clean -fd
-
+            
             # Pull latest code
             git pull origin main
-
+            
             # Update dependencies
             /usr/local/go/bin/go mod tidy
-
+            
             # Stop service
             sudo systemctl stop mebellar
-
+            
             # Remove old binary
             rm -f mebellar-backend-prod
-
+            
             # Build new binary
             /usr/local/go/bin/go build -o mebellar-backend-prod .
             chmod +x mebellar-backend-prod
-
+            
             # Start service
             sudo systemctl start mebellar
-
+            
             # Wait for startup
             echo "⏳ Waiting for backend to start..."
             sleep 10
-
+            
             # Health check with retry
             for i in {1..5}; do
               if curl -f http://localhost:8081/health > /dev/null 2>&1; then
@@ -141,7 +141,7 @@ jobs:
               echo "⏳ Retry $i/5..."
               sleep 3
             done
-
+            
             # Deployment failed
             echo "❌ Deployment failed! Health check failed."
             sudo journalctl -u mebellar -n 50 --no-pager

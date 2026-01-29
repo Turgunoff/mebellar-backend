@@ -1,0 +1,23 @@
+run:
+  timeout: 5m
+  skip-dirs:
+    - .history
+    - vendor
+
+linters:
+  disable:
+    - dupl
+    - errcheck
+    - ineffassign
+    - gosimple
+  enable:
+    - gofmt
+    - govet
+
+linters-settings:
+  staticcheck:
+    checks: ["all", "-SA1019"]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

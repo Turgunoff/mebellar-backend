@@ -1,0 +1,23 @@
+run:
+  timeout: 5m
+
+issues:
+  exclude-dirs:
+    - .history
+    - vendor
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+linters:
+  disable:
+    - dupl
+    - errcheck
+    - ineffassign
+    - gosimple
+    - staticcheck
+  enable:
+    - gofmt
+    - govet
+
+output:
+  format: colored-line-number
