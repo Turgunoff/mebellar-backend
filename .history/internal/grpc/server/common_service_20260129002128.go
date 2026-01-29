@@ -444,7 +444,26 @@ func (s *CommonServiceServer) UpdateBanner(ctx context.Context, req *pb.UpdateBa
 }
 
 func (s *CommonServiceServer) DeleteBanner(ctx context.Context, req *pb.DeleteBannerRequest) (*pb.Empty, error) {
-	return DeleteEntity(ctx, s.db, "banners", req.GetId(), "banner")
+	auth := middleware.GetAuthContext(ctx)
+	if auth == nil || (auth.Role != "admin" && auth.Role != "moderator") {
+		return nil, status.Error(codes.PermissionDenied, "admin or moderator role required")
+	}
+
+	if req.GetId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "banner id is required")
+	}
+
+	result, err := s.db.ExecContext(ctx, "DELETE FROM banners WHERE id = $1", req.GetId())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "failed to delete banner: %v", err)
+	}
+
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		return nil, status.Error(codes.NotFound, "banner not found")
+	}
+
+	return &pb.Empty{}, nil
 }
 
 // ============================================

@@ -815,7 +815,21 @@ func (s *ShopServiceServer) buildShop(id, sellerID string, name, description, ad
 }
 
 func (s *ShopServiceServer) verifyShopOwnership(ctx context.Context, shopID, userID string) error {
-	return VerifyShopOwnershipHelper(ctx, s.db, shopID, userID)
+	var sellerID string
+	err := s.db.QueryRowContext(ctx, "SELECT seller_id FROM shops WHERE id = $1", shopID).Scan(&sellerID)
+	if err == sql.ErrNoRows {
+		return status.Error(codes.NotFound, "shop not found")
+	}
+	if err != nil {
+		return status.Errorf(codes.Internal, "query error: %v", err)
+	}
+
+	var ownerUserID string
+	err = s.db.QueryRowContext(ctx, "SELECT user_id FROM seller_profiles WHERE id = $1", sellerID).Scan(&ownerUserID)
+	if err != nil || ownerUserID != userID {
+		return status.Error(codes.PermissionDenied, "you don't own this shop")
+	}
+	return nil
 }
 
 func (s *ShopServiceServer) getSellerProfileByUserID(ctx context.Context, userID string) (*pb.SellerProfile, error) {
