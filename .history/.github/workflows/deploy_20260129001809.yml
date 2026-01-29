@@ -21,40 +21,40 @@ jobs:
           port: 22
           script: |
             set -e  # Stop on error
-
+            
             echo "🚀 Starting deployment..."
-
+            
             # 1. Loyiha papkasiga kirish
             cd ~/mebellar-backend
-
+            
             # 2. Eski o'zgarishlarni bekor qilish
             git reset --hard origin/main
             git clean -fd
-
+            
             # 3. Yangi kodni olish
             git pull origin main
-
+            
             # 4. Dependencies yangilash
             /usr/local/go/bin/go mod tidy
-
+            
             # 5. Service to'xtatish
             sudo systemctl stop mebellar
-
+            
             # 6. Eski binary o'chirish
             rm -f mebellar-backend-prod
-
+            
             # 7. Yangi build
             /usr/local/go/bin/go build -o mebellar-backend-prod .
-
+            
             # 8. Executable qilish
             chmod +x mebellar-backend-prod
-
+            
             # 9. Service ishga tushirish
             sudo systemctl start mebellar
-
+            
             # 10. Kutish (backend ishga tushishi uchun)
             sleep 5
-
+            
             # 11. Health check
             if curl -f http://localhost:8081/health > /dev/null 2>&1; then
               echo "✅ Deployment successful!"

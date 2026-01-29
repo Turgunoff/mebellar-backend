@@ -1,0 +1,46 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            # 1. Loyiha papkasiga kirish
+            cd ~/mebellar-backend
+
+            # 2. Serverdagi o'zgarishlarni bekor qilish (Clean state)
+            git reset --hard origin/main
+            git clean -fd  # Gitda yo'q ortiqcha fayllarni o'chirish
+
+            # 3. Eng yangi kodni olish (Bunda pkg/pb ichidagi yangi fayllar ham keladi)
+            git pull origin main
+
+            # 4. Dependency'larni yangilash
+            /usr/local/go/bin/go mod tidy
+
+            # 5. Eski binary faylni o'chirish (Muhim!)
+            rm -f server_app
+
+            # 6. Yangi dasturni qurish
+            /usr/local/go/bin/go build -o server_app .
+
+            # 7. Servisni yangilash
+            systemctl restart mebellar
+
+            # 8. Statusni tekshirish
+            systemctl status mebellar --no-pager
