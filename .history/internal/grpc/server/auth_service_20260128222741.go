@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"regexp"
 	"strings"
 	"time"
 
@@ -250,7 +251,7 @@ func (s *AuthServiceServer) VerifyOTP(ctx context.Context, req *pb.VerifyOTPRequ
 	// In the REST layer OTP is tracked in memory; here we assume verification
 	// is handled upstream and just return a placeholder success to illustrate flow.
 	if strings.TrimSpace(req.GetPhone()) == "" || strings.TrimSpace(req.GetCode()) == "" {
-		return nil, apperror.NewValidationError("Номер телефона и код обязательны").ToGRPCError()
+		return nil, status.Error(codes.InvalidArgument, "phone and code required")
 	}
 	return &pb.VerifyOTPResponse{
 		Success: true,
@@ -260,17 +261,17 @@ func (s *AuthServiceServer) VerifyOTP(ctx context.Context, req *pb.VerifyOTPRequ
 
 func (s *AuthServiceServer) RefreshToken(ctx context.Context, req *pb.RefreshTokenRequest) (*pb.RefreshTokenResponse, error) {
 	if strings.TrimSpace(req.GetRefreshToken()) == "" {
-		return nil, apperror.NewValidationError("Refresh token обязателен").ToGRPCError()
+		return nil, status.Error(codes.InvalidArgument, "refresh_token required")
 	}
 	// For simplicity, treat refresh token as JWT with same secret and claims.
 	token, err := jwt.Parse(req.GetRefreshToken(), func(token *jwt.Token) (interface{}, error) {
 		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, apperror.NewUnauthorizedError("Неверный алгоритм подписи").ToGRPCError()
+			return nil, status.Error(codes.Unauthenticated, "unexpected signing method")
 		}
 		return s.jwtSecret, nil
 	})
 	if err != nil || !token.Valid {
-		return nil, apperror.NewUnauthorizedError("Неверный refresh token").ToGRPCError()
+		return nil, status.Error(codes.Unauthenticated, "invalid refresh token")
 	}
 	claims, _ := token.Claims.(jwt.MapClaims)
 	userID, _ := claims["user_id"].(string)
@@ -278,7 +279,7 @@ func (s *AuthServiceServer) RefreshToken(ctx context.Context, req *pb.RefreshTok
 	role, _ := claims["role"].(string)
 	access, refresh, err := s.issueTokens(userID, phone, role)
 	if err != nil {
-		return nil, apperror.NewInternalError("Не удалось создать токен", err).ToGRPCError()
+		return nil, status.Errorf(codes.Internal, "failed to issue token: %v", err)
 	}
 	return &pb.RefreshTokenResponse{
 		AccessToken:  access,
