@@ -1,0 +1,1 @@
+-- Rollback for 008_add_user_is_active

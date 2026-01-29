@@ -1,0 +1,1 @@
+-- Rollback for 017_convert_seller_profiles_address_to_jsonb

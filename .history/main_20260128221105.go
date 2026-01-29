@@ -331,11 +331,8 @@ func main() {
 	// Enable reflection for gRPC CLI tools (grpcurl, grpcui, etc.)
 	reflection.Register(grpcServer)
 
-	// 11. Start servers
-	logger.Info("Starting servers",
-		zap.String("static_port", staticPort),
-		zap.String("grpc_port", grpcPort),
-	)
+	// 6. Start servers
+	fmt.Println("🚀 Serverlar ishga tushmoqda...")
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -350,45 +347,16 @@ func main() {
 		fs := http.FileServer(http.Dir("uploads"))
 		mux.Handle("/uploads/", http.StripPrefix("/uploads/", fs))
 
-		// Health check endpoint with connection pool stats
+		// Health check endpoint
 		mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
-
-			// Проверка подключения к БД
-			if err := db.Ping(); err != nil {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				json.NewEncoder(w).Encode(map[string]interface{}{
-					"status": "unhealthy",
-					"error":  "database unavailable",
-				})
-				return
-			}
-
-			// Статистика connection pool
-			stats := db.Stats()
-
 			w.WriteHeader(http.StatusOK)
-			json.NewEncoder(w).Encode(map[string]interface{}{
-				"status":  "ok",
-				"service": "mebellar-backend",
-				"database": map[string]interface{}{
-					"open_connections":    stats.OpenConnections,
-					"in_use":              stats.InUse,
-					"idle":                stats.Idle,
-					"wait_count":          stats.WaitCount,
-					"wait_duration_ms":    stats.WaitDuration.Milliseconds(),
-					"max_idle_closed":     stats.MaxIdleClosed,
-					"max_lifetime_closed": stats.MaxLifetimeClosed,
-				},
-			})
+			w.Write([]byte(`{"status":"ok","service":"mebellar-backend"}`))
 		})
 
-		logger.Info("Static file server started",
-			zap.String("port", staticPort),
-			zap.String("upload_dir", "uploads"),
-		)
+		fmt.Printf("✅ Static File Server %s-portda tayyor! (uploads servisi)\n", staticPort)
 		if err := http.ListenAndServe(":"+staticPort, mux); err != nil {
-			logger.Fatal("Static server error", zap.Error(err))
+			log.Fatalf("❌ Static server xatosi: %v", err)
 		}
 	}()
 
@@ -397,21 +365,109 @@ func main() {
 		defer wg.Done()
 		lis, err := net.Listen("tcp", ":"+grpcPort)
 		if err != nil {
-			logger.Fatal("gRPC listener error", zap.Error(err))
+			log.Fatalf("❌ gRPC listener xatosi: %v", err)
 		}
-		logger.Info("gRPC server started",
-			zap.String("port", grpcPort),
-			zap.Strings("services", []string{
-				"AuthService", "UserService", "OrderService",
-				"ProductService", "CategoryService", "ShopService", "CommonService",
-			}),
-		)
+		fmt.Printf("✅ gRPC Server %s-portda tayyor!\n", grpcPort)
+		fmt.Println("📡 Registered services: AuthService, UserService, OrderService, ProductService, CategoryService, ShopService, CommonService")
 		if err := grpcServer.Serve(lis); err != nil {
-			logger.Fatal("gRPC server error", zap.Error(err))
+			log.Fatalf("❌ gRPC server xatosi: %v", err)
 		}
 	}()
 
 	wg.Wait()
+}
+
+// ---------------------------------------------------------
+// Yordamchi Funksiyalar (DB Migration)
+// ---------------------------------------------------------
+
+func createUsersTable(db *sql.DB) {
+	query := `
+	CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		full_name VARCHAR(255) NOT NULL,
+		phone VARCHAR(20) UNIQUE NOT NULL,
+		email VARCHAR(255) UNIQUE,
+		avatar_url VARCHAR(500),
+		password_hash VARCHAR(255) NOT NULL,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW()
+	);
+	`
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Printf("Users jadvalini yaratishda xatolik: %v", err)
+	} else {
+		fmt.Println("✅ Users jadvali tayyor!")
+	}
+
+	// Ustunlarni tekshirish va qo'shish (Migration)
+	addColumnIfNotExists(db, "users", "email", "VARCHAR(255) UNIQUE")
+	addColumnIfNotExists(db, "users", "avatar_url", "VARCHAR(500)")
+	addColumnIfNotExists(db, "users", "is_active", "BOOLEAN DEFAULT TRUE")
+	addColumnIfNotExists(db, "users", "role", "VARCHAR(50) DEFAULT 'customer'")
+	addColumnIfNotExists(db, "users", "onesignal_id", "VARCHAR(255)")
+
+	createSellerProfilesTable(db)
+}
+
+func createSellerProfilesTable(db *sql.DB) {
+	query := `
+	CREATE TABLE IF NOT EXISTS seller_profiles (
+		id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+		user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+		shop_name VARCHAR(255) NOT NULL,
+		slug VARCHAR(255) UNIQUE,
+		description TEXT,
+		logo_url VARCHAR(500),
+		banner_url VARCHAR(500),
+		legal_name VARCHAR(255),
+		tax_id VARCHAR(50),
+		bank_account VARCHAR(50),
+		bank_name VARCHAR(255),
+		support_phone VARCHAR(20),
+		address JSONB DEFAULT '{}',
+		latitude FLOAT8,
+		longitude FLOAT8,
+		social_links JSONB DEFAULT '{}',
+		working_hours JSONB DEFAULT '{}',
+		is_verified BOOLEAN DEFAULT FALSE,
+		rating FLOAT DEFAULT 0,
+		created_at TIMESTAMP DEFAULT NOW(),
+		updated_at TIMESTAMP DEFAULT NOW()
+	);
+	`
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Printf("Seller profiles jadvalini yaratishda xatolik: %v", err)
+	} else {
+		fmt.Println("✅ Seller Profiles jadvali tayyor!")
+	}
+
+	// Indekslar
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_user_id ON seller_profiles(user_id)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_shop_name ON seller_profiles(shop_name)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_slug ON seller_profiles(slug)`)
+	db.Exec(`CREATE INDEX IF NOT EXISTS idx_seller_profiles_is_verified ON seller_profiles(is_verified)`)
+}
+
+func addColumnIfNotExists(db *sql.DB, table, column, dataType string) {
+	query := fmt.Sprintf(`
+		DO $$
+		BEGIN
+			IF NOT EXISTS (
+				SELECT 1 FROM information_schema.columns 
+				WHERE table_name = '%s' AND column_name = '%s'
+			) THEN
+				ALTER TABLE %s ADD COLUMN %s %s;
+			END IF;
+		END $$;
+	`, table, column, table, column, dataType)
+
+	_, err := db.Exec(query)
+	if err != nil {
+		log.Printf("Ustun qo'shishda xatolik (%s.%s): %v", table, column, err)
+	}
 }
 
 func initSMSService() sms.SMSService {
@@ -419,16 +475,15 @@ func initSMSService() sms.SMSService {
 	eskizPassword := os.Getenv("ESKIZ_PASSWORD")
 
 	if eskizEmail == "" || eskizPassword == "" {
-		logger.Warn("ESKIZ_EMAIL or ESKIZ_PASSWORD not set, SMS service will not be initialized")
+		fmt.Println("⚠️  ESKIZ_EMAIL yoki ESKIZ_PASSWORD o'rnatilmagan")
 		return nil
 	}
 	eskizService := sms.NewEskizService(eskizEmail, eskizPassword)
 	go func() {
 		if err := eskizService.Login(); err != nil {
-			logger.Error("Eskiz login error", zap.Error(err))
-		} else {
-			logger.Info("Eskiz SMS service connected")
+			log.Printf("⚠️ Eskiz login xatosi: %v", err)
 		}
 	}()
+	fmt.Println("✅ Eskiz SMS xizmati ulandi!")
 	return eskizService
 }

@@ -67,17 +67,12 @@ func (s *AuthServiceServer) SendOTP(ctx context.Context, req *pb.SendOTPRequest)
 
 	// Store OTP (in production, use Redis with TTL)
 	// For now, this is a placeholder - you should implement proper OTP storage
-	logger.Info("OTP generated for phone (not logging code for security)",
-		zap.String("phone", phone),
-	)
+	log.Printf("📱 [gRPC OTP] to %s: %s", phone, code)
 
 	// Send real SMS via Eskiz
 	if s.sms != nil {
 		if err := s.sms.SendOTP(phone, code); err != nil {
-			logger.Error("Failed to send SMS",
-				zap.String("phone", phone),
-				zap.Error(err),
-			)
+			log.Printf("❌ [SMS ERROR] to %s: %v", phone, err)
 			// We might want to return an error here, but for now let's just log it
 			// or return a specific error if needed.
 			// return nil, status.Errorf(codes.Internal, "failed to send SMS: %v", err)

@@ -1,0 +1,1 @@
+-- Rollback for 026_add_has_pin_to_users
