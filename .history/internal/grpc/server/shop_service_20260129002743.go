@@ -760,6 +760,27 @@ func (s *ShopServiceServer) scanShop(rows *sql.Rows) (*pb.Shop, error) {
 	return s.buildShop(id, sellerID, name, description, address, slug, logoURL, bannerURL, phone, latitude, longitude, regionID, regionName, workingHours, isActive, isVerified, isMain, rating, createdAt, updatedAt), nil
 }
 
+// Deprecated: scanShopRow is deprecated. Use scanShop instead.
+// Kept for backwards compatibility. This method is identical to scanShop.
+func (s *ShopServiceServer) scanShopRow(row *sql.Row) (*pb.Shop, error) {
+	var id, sellerID, slug string
+	var name, description, address, workingHours, regionName []byte
+	var logoURL, bannerURL, phone sql.NullString
+	var latitude, longitude sql.NullFloat64
+	var regionID sql.NullInt32
+	var isActive, isVerified, isMain bool
+	var rating float64
+	var createdAt, updatedAt time.Time
+
+	err := row.Scan(&id, &sellerID, &name, &description, &address, &slug, &logoURL, &bannerURL,
+		&phone, &latitude, &longitude, &regionID, &regionName, &workingHours, &isActive, &isVerified, &isMain, &rating, &createdAt, &updatedAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.buildShop(id, sellerID, name, description, address, slug, logoURL, bannerURL, phone, latitude, longitude, regionID, regionName, workingHours, isActive, isVerified, isMain, rating, createdAt, updatedAt), nil
+}
+
 func (s *ShopServiceServer) buildShop(id, sellerID string, name, description, address []byte, slug string, logoURL, bannerURL, phone sql.NullString, latitude, longitude sql.NullFloat64, regionID sql.NullInt32, regionName, workingHours []byte, isActive, isVerified, isMain bool, rating float64, createdAt, updatedAt time.Time) *pb.Shop {
 	nameMap := make(map[string]string)
 	json.Unmarshal(name, &nameMap)

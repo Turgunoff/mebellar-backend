@@ -663,6 +663,22 @@ func (s *CategoryServiceServer) scanAttribute(rows *sql.Rows) (*pb.CategoryAttri
 	return s.buildAttribute(id, categoryID, key, attrType, labelJSON, optionsJSON, isRequired, sortOrder, createdAt, updatedAt), nil
 }
 
+// Deprecated: scanAttributeRow is deprecated. Use scanAttribute instead.
+// Kept for backwards compatibility. This method is identical to scanAttribute.
+func (s *CategoryServiceServer) scanAttributeRow(row *sql.Row) (*pb.CategoryAttribute, error) {
+	var id, categoryID, key, attrType string
+	var labelJSON, optionsJSON []byte
+	var isRequired bool
+	var sortOrder int32
+	var createdAt, updatedAt sql.NullTime
+
+	if err := row.Scan(&id, &categoryID, &key, &attrType, &labelJSON, &optionsJSON, &isRequired, &sortOrder, &createdAt, &updatedAt); err != nil {
+		return nil, err
+	}
+
+	return s.buildAttribute(id, categoryID, key, attrType, labelJSON, optionsJSON, isRequired, sortOrder, createdAt, updatedAt), nil
+}
+
 func (s *CategoryServiceServer) buildAttribute(id, categoryID, key, attrType string, labelJSON, optionsJSON []byte, isRequired bool, sortOrder int32, createdAt, updatedAt sql.NullTime) *pb.CategoryAttribute {
 	labelMap := make(map[string]string)
 	json.Unmarshal(labelJSON, &labelMap)

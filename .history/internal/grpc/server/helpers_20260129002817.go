@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"mebellar-backend/internal/grpc/middleware"
 	"mebellar-backend/pkg/pb"

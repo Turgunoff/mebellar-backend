@@ -198,20 +198,20 @@ func (d *DeliverySettings) Scan(value interface{}) error {
 		// Check if it's actually new format (has regional_prices or is_home_region_free key)
 		var rawMap map[string]interface{}
 		if err := json.Unmarshal(bytes, &rawMap); err == nil {
-			if _, hasNewKey := rawMap["regional_prices"]; hasNewKey {
+
+		if _, hasNewKey := rawMap["regional_prices"]; hasNewKey {
+			*d = newFormat
+			return nil
+		}
+		if _, hasNewKey := rawMap["is_home_region_free"]; hasNewKey {
+			*d = newFormat
+			return nil
+		}
+		if _, hasNewKey := rawMap["has_installation"]; hasNewKey {
+			// Could be new format without regional_prices
+			if _, hasDefault := rawMap["default"]; !hasDefault {
 				*d = newFormat
 				return nil
-			}
-			if _, hasNewKey := rawMap["is_home_region_free"]; hasNewKey {
-				*d = newFormat
-				return nil
-			}
-			if _, hasNewKey := rawMap["has_installation"]; hasNewKey {
-				// Could be new format without regional_prices
-				if _, hasDefault := rawMap["default"]; !hasDefault {
-					*d = newFormat
-					return nil
-				}
 			}
 		}
 	}
