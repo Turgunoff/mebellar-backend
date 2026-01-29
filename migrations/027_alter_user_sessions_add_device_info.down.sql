@@ -1,1 +1,0 @@
--- Rollback for 027_alter_user_sessions_add_device_info

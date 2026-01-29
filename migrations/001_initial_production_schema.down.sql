@@ -1,0 +1,21 @@
+-- Rollback: Drop all tables
+DROP TABLE IF EXISTS banners CASCADE;
+DROP TABLE IF EXISTS user_sessions CASCADE;
+DROP TABLE IF EXISTS category_attributes CASCADE;
+DROP TABLE IF EXISTS cancellation_reasons CASCADE;
+DROP TABLE IF EXISTS order_items CASCADE;
+DROP TABLE IF EXISTS orders CASCADE;
+DROP TABLE IF EXISTS favorites CASCADE;
+DROP TABLE IF EXISTS products CASCADE;
+DROP TABLE IF EXISTS categories CASCADE;
+DROP TABLE IF EXISTS shops CASCADE;
+DROP TABLE IF EXISTS regions CASCADE;
+DROP TABLE IF EXISTS seller_profiles CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+-- Drop functions
+DROP FUNCTION IF EXISTS update_updated_at_column();
+
+-- Drop extensions
+DROP EXTENSION IF EXISTS pg_trgm;
+DROP EXTENSION IF EXISTS "uuid-ossp";

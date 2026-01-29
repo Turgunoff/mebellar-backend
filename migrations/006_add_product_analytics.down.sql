@@ -1,1 +1,0 @@
--- Rollback for 006_add_product_analytics

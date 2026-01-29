@@ -1,1 +1,0 @@
--- Rollback for 024_seed_category_attributes

@@ -1,1 +1,0 @@
--- Rollback for 029_create_banners_table

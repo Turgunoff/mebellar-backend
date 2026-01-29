@@ -1,1 +1,0 @@
--- Rollback for 016_create_shops_table

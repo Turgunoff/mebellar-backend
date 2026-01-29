@@ -1,1 +1,0 @@
--- Rollback for 002_create_seller_profiles

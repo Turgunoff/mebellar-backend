@@ -1,1 +1,0 @@
--- Rollback for 028_add_device_os_info_to_sessions

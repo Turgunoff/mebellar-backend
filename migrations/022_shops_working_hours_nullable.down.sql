@@ -1,1 +1,0 @@
--- Rollback for 022_shops_working_hours_nullable

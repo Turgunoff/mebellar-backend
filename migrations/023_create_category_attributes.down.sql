@@ -1,1 +1,0 @@
--- Rollback for 023_create_category_attributes

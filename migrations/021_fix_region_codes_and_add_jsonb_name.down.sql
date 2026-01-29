@@ -1,1 +1,0 @@
--- Rollback for 021_fix_region_codes_and_add_jsonb_name

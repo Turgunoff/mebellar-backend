@@ -1,1 +1,0 @@
--- Rollback for 015_convert_product_name_desc_to_jsonb
