@@ -1,0 +1,1 @@
+-- Rollback for 014_convert_category_name_to_jsonb

@@ -1,0 +1,1 @@
+-- Rollback for 012_insert_first_admin

@@ -1,0 +1,1 @@
+-- Rollback for 004_add_shop_id_to_products

@@ -1,0 +1,1 @@
+-- Rollback for 005_create_regions_table

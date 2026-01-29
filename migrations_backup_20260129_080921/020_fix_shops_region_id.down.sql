@@ -1,0 +1,1 @@
+-- Rollback for 020_fix_shops_region_id

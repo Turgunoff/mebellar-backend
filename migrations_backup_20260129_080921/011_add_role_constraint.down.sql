@@ -1,0 +1,1 @@
+-- Rollback for 011_add_role_constraint
